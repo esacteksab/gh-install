@@ -1,0 +1,42 @@
+changelog:
+  exclude:
+    labels:
+      - ignore-changelog
+
+  categories:
+    - title: ":warning: Update considerations and deprecations"
+      labels:
+        - "type: breaking"
+        - "type: deprecation"
+        - "type: regression"
+        - "type: revert"
+
+    - title: ":rocket: New features and improvements"
+      labels:
+        - "type: release"
+        - "type: feat"
+        - "type: enhancement"
+        - "type: refactor"
+        - "type: perf"
+
+    - title: ":lady_beetle: Bug fixes"
+      labels:
+        - "type: fix"
+
+    - title: ":nail_care: Style, UI, UX"
+      labels:
+        - "type: style"
+
+    - title: ":book: Documentation"
+      labels:
+        - "type: docs"
+
+    - title: ":hammer: Build/Test Dependency Upgrades"
+      labels:
+        - "type: dependencies"
+        - "dependencies"
+        - "type: test"
+        - "type: ci"
+        - "type: build"
+        - "type: chore"
+        - "type: task"
