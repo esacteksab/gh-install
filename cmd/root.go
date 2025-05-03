@@ -157,10 +157,10 @@ func downloadAsset(owner, repo string, assets []*github.ReleaseAsset) {
 			}
 
 			file, err := os.Create(*a.Name)
-			defer file.Close() //nolint:staticcheck,errcheck
 			if err != nil {
 				log.Fatalf("Unable to create file: %s", err)
 			}
+			defer file.Close() //nolint:errcheck
 
 			bar := progressbar.NewOptions(*a.Size,
 				progressbar.OptionShowBytes(true),

@@ -7,16 +7,6 @@
   ],
   "overrides": [
     {
-      "files": ["*.html"],
-      "options": {
-        "parser": "go-template",
-        "goTemplateBracketSpacing": true,
-        "bracketSameLine": true,
-        "embeddedLanguageFormatting": "off",
-        "htmlWhitespaceSensitivity": "strict"
-      }
-    },
-    {
       "files": ["*.md"],
       "options": {
         "embeddedLanguageFormatting": "off"
