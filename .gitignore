@@ -22,15 +22,19 @@ _site/
 # Binaries for programs and plugins
 *.exe
 *.exe~
+*.gz
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
 *.so
+*.tar.gz
 # Test binary, built with `go test -c`
 *.test
+*.zip
 # Go workspace file
 go.work
 go.work.sum
 main
+toml-fmt*
 
 # keep-sorted end
 #################

@@ -10,38 +10,43 @@ import (
 	"os"
 	"regexp"
 	"runtime"
-	"strings"
+	"strconv"
 
 	"github.com/google/go-github/v71/github"
-	kt "github.com/knadh/koanf/parsers/toml/v2"
-	"github.com/knadh/koanf/providers/file"
-	"github.com/knadh/koanf/v2"
+
 	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
+
+	"github.com/esacteksab/gh-install/ghclient"
+	"github.com/esacteksab/gh-install/utils"
 )
 
-// ParsedArgs holds the parsed components of the argument string.
-type ParsedArgs struct {
-	Owner   string
-	Repo    string
-	Version string // Will be "latest" or a specific tag
-}
+var Logger *log.Logger
 
-type BinaryConfig struct {
-	Key     string `koanf:"key"`
-	Name    string `koanf:"name"`
-	Version string `koanf:"version"`
-}
-
-type Config struct {
-	Binaries map[string]BinaryConfig `koanf:"binaries"`
-}
+// --- Environment variable for init-phase debugging ---
+const ghInstallInitDebugEnv = "GH_INSTALL_INIT_DEBUG" // Or your preferred name
 
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 //
 // Returns: Does not return a value, but exits the program with status code 1 if an error occurs.
 func Execute() {
+	// Initial Logger -- InfoLevel
+	// createLogger(false)
+	// --- Check ENV VAR for Initial Verbosity ---
+	debugEnvVal := os.Getenv(ghInstallInitDebugEnv)
+	// Parse bool allows "true", "TRUE", "True", "1"
+	initialVerbose, _ := strconv.ParseBool(debugEnvVal)
+	// If parsing fails (e.g., empty string), initialVerbose remains false
+
+	// --- Create INITIAL logger based on ENV VAR ---
+	utils.CreateLogger(initialVerbose) // Initia/Configlize with level based on debug env var
+	// This log will NOW appear if GH_TP_INIT_DEBUG=true
+	utils.Logger.Debugf(
+		"Initial logger created in Execute(). Initial Verbose based on %s: %t",
+		ghInstallInitDebugEnv,
+		initialVerbose,
+	)
 	// Execute the root command. If an error occurs, print it to stderr and exit.
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -56,49 +61,41 @@ Detects Operating System and Architecture to download and
 install the appropriate binary.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		a := args[0]
-		pa, err := parseArgs(a)
+		pa, err := utils.ParseArgs(a)
 		if err != nil {
 			fmt.Printf("error: %s", err)
 		}
 
+		// context.Background() is the default context, suitable for the top-level command.
+		ctx := context.Background()
+
+		// Initialize the GitHub client using the dedicated package.
+		client, err := ghclient.NewClient(ctx)
+		if err != nil {
+			// Log a fatal error and exit if the client cannot be initialized.
+			log.Fatalf("Failed to initialize GitHub client: %v", err)
+		}
+
+		// Check the current GitHub API rate limit. This is helpful for debugging potential rate limit issues.
+		ghclient.CheckRateLimit(ctx, client)
+
 		if pa.Version == "latest" || pa.Version == "" {
-			assets := getLatestRelease(pa.Owner, pa.Repo)
+			assets := getLatestRelease(ctx, client, pa.Owner, pa.Repo)
 
-			downloadAsset(pa.Owner, pa.Repo, assets)
+			downloadAsset(ctx, client, pa.Owner, pa.Repo, assets)
 		} else {
-			assets := getTaggedRelease(pa.Owner, pa.Repo, pa.Version)
+			assets := getTaggedRelease(ctx, client, pa.Owner, pa.Repo, pa.Version)
 
-			downloadAsset(pa.Owner, pa.Repo, assets)
+			downloadAsset(ctx, client, pa.Owner, pa.Repo, assets)
 		}
 	},
 }
 
-func LoadFromFile(path string) (Config, error) {
-	k := koanf.New(".")
-
-	if err := k.Load(file.Provider(path), kt.Parser()); err != nil {
-		return Config{}, err
-	}
-
-	config := Config{
-		Binaries: make(map[string]BinaryConfig),
-	}
-
-	for _, key := range k.MapKeys("") {
-		src := BinaryConfig{
-			Key:     key,
-			Name:    k.String(key + ".name"),
-			Version: k.String(key + ".version"),
-		}
-		config.Binaries[key] = src
-	}
-	return config, nil
-}
-
-func getLatestRelease(owner, repo string) (assets []*github.ReleaseAsset) {
-	client := github.NewClient(nil)
-	ctx := context.Background()
-
+func getLatestRelease(
+	ctx context.Context,
+	client *github.Client,
+	owner, repo string,
+) (assets []*github.ReleaseAsset) {
 	release, _, err := client.Repositories.GetLatestRelease(ctx, owner, repo)
 	if err != nil {
 		fmt.Printf("error: %s ", err)
@@ -108,10 +105,11 @@ func getLatestRelease(owner, repo string) (assets []*github.ReleaseAsset) {
 	return release.Assets
 }
 
-func getTaggedRelease(owner, repo, tag string) (assets []*github.ReleaseAsset) {
-	client := github.NewClient(nil)
-	ctx := context.Background()
-
+func getTaggedRelease(
+	ctx context.Context,
+	client *github.Client,
+	owner, repo, tag string,
+) (assets []*github.ReleaseAsset) {
 	release, _, err := client.Repositories.GetReleaseByTag(ctx, owner, repo, tag)
 	if err != nil {
 		fmt.Printf("error: %s ", err)
@@ -139,10 +137,12 @@ func getFile(file string) bool {
 	}
 }
 
-func downloadAsset(owner, repo string, assets []*github.ReleaseAsset) {
-	client := github.NewClient(nil)
-	ctx := context.Background()
-
+func downloadAsset(
+	ctx context.Context,
+	client *github.Client,
+	owner, repo string,
+	assets []*github.ReleaseAsset,
+) {
 	for _, a := range assets {
 		if getFile(*a.Name) {
 			ID := *a.ID
@@ -181,73 +181,4 @@ func downloadAsset(owner, repo string, assets []*github.ReleaseAsset) {
 			fmt.Printf("Successfully downloaded %s\n", *a.Name)
 		}
 	}
-}
-
-// parseArgs parses an argument string in the format owner/repo[@version].
-// Supported formats:
-// - owner/repo (version defaults to "latest")
-// - owner/repo@latest
-// - owner/repo@vX.Y.Z (or any other tag)
-// Returns ParsedArgs and an error if the format is invalid.
-// It also handles the "owner/repo@" case as an error.
-func parseArgs(argString string) (ParsedArgs, error) {
-	var owner, repo, version string
-
-	atIndex := strings.Index(argString, "@")
-
-	if atIndex != -1 { // Contains "@"
-		// Split into owner/repo part and version part
-		parts := strings.Split(argString, "@")
-
-		// Check for cases like "owner/repo@tag@other" or just "@"
-		if len(parts) != 2 { //nolint:mnd
-			return ParsedArgs{}, fmt.Errorf(
-				"invalid argument format '%s': expected owner/repo[@version]",
-				argString,
-			)
-		}
-
-		ownerRepoPart := parts[0]
-		version = parts[1]
-
-		// Handle the specific "owner/repo@" case where version is empty
-		if version == "" {
-			return ParsedArgs{}, fmt.Errorf(
-				"invalid argument format '%s': missing version after '@'",
-				argString,
-			)
-		}
-
-		// Now parse the owner/repo part
-		orParts := strings.Split(ownerRepoPart, "/")
-		if len(orParts) != 2 || orParts[0] == "" || orParts[1] == "" {
-			return ParsedArgs{}, fmt.Errorf(
-				"invalid owner/repo format '%s' before '@': expected owner/repo",
-				ownerRepoPart,
-			)
-		}
-		owner = orParts[0]
-		repo = orParts[1]
-	} else { // Does not contain "@"
-		// Format must be owner/repo, version is implicitly "latest"
-		orParts := strings.Split(argString, "/")
-		if len(orParts) != 2 || orParts[0] == "" || orParts[1] == "" {
-			return ParsedArgs{}, fmt.Errorf("invalid owner/repo format '%s': expected owner/repo or owner/repo@version", argString)
-		}
-		owner = orParts[0]
-		repo = orParts[1]
-		version = "latest" // Default version
-	}
-
-	// Basic validation: owner and repo shouldn't contain slashes or @
-	// (Though strictly following the logic, these cases would likely
-	// be caught by the split checks above, but doesn't hurt)
-	if strings.Contains(owner, "/") || strings.Contains(owner, "@") {
-		return ParsedArgs{}, fmt.Errorf("invalid characters in owner '%s'", owner)
-	}
-	if strings.Contains(repo, "/") || strings.Contains(repo, "@") {
-		return ParsedArgs{}, fmt.Errorf("invalid characters in repo '%s'", repo)
-	}
-
-	return ParsedArgs{Owner: owner, Repo: repo, Version: version}, nil
 }
