@@ -3,6 +3,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -21,17 +22,75 @@ import (
 	"github.com/esacteksab/gh-install/utils"
 )
 
-var Logger *log.Logger
+var (
+	Version       string // Application version
+	Date          string // Build date
+	Commit        string // Git commit hash
+	BuiltBy       string // Builder identifier
+	Logger        *log.Logger
+	osArchRegexes []*regexp.Regexp
+)
+
+type Asset struct {
+	Name     string
+	MIMEType string
+}
 
 // --- Environment variable for init-phase debugging ---
 const ghInstallInitDebugEnv = "GH_INSTALL_INIT_DEBUG" // Or your preferred name
+
+func init() {
+	// BuildVersion utility formats the version string.
+	rootCmd.Version = utils.BuildVersion(Version, Commit, Date, BuiltBy)
+	// SetVersionTemplate customizes how the version is printed.
+	rootCmd.SetVersionTemplate(`{{printf "Version %s" .Version}}`)
+
+	os := runtime.GOOS
+	arch := runtime.GOARCH
+
+	// Escape special regex characters in OS and arch
+	quotedOS := regexp.QuoteMeta(os)
+
+	// Create architecture mappings for common variants
+	var archPatterns []string
+
+	// Add the default Go architecture name
+	archPatterns = append(archPatterns, regexp.QuoteMeta(arch))
+
+	// Add common alternative architecture names
+	switch arch {
+	case "amd64":
+		archPatterns = append(archPatterns, "x86_64")
+	case "386":
+		archPatterns = append(archPatterns, "i386")
+	}
+
+	// Create all combinations of patterns
+	var patterns []string
+	for _, archPattern := range archPatterns {
+		// Create and compile patterns for all three separator types
+		patterns = append(patterns, fmt.Sprintf("(?i)%s-%s", quotedOS, archPattern))
+		patterns = append(patterns, fmt.Sprintf("(?i)%s/%s", quotedOS, archPattern))
+		patterns = append(patterns, fmt.Sprintf("(?i)%s_%s", quotedOS, archPattern))
+
+		// Add patterns that might have the OS name at the beginning or end of the filename
+		patterns = append(patterns, fmt.Sprintf("(?i)%s.*%s", quotedOS, archPattern))
+		patterns = append(patterns, fmt.Sprintf("(?i)%s.*%s", archPattern, quotedOS))
+	}
+
+	// Pre-compile all the patterns
+	osArchRegexes = make([]*regexp.Regexp, len(patterns))
+	for i, pattern := range patterns {
+		osArchRegexes[i] = regexp.MustCompile(pattern)
+	}
+}
 
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 //
 // Returns: Does not return a value, but exits the program with status code 1 if an error occurs.
 func Execute() {
-	// Initial Logger -- InfoLevel
+	// Initial Logger --
 	// createLogger(false)
 	// --- Check ENV VAR for Initial Verbosity ---
 	debugEnvVal := os.Getenv(ghInstallInitDebugEnv)
@@ -59,7 +118,7 @@ var rootCmd = &cobra.Command{
 	Long: `gh installs binaries published on GitHub releases.
 Detects Operating System and Architecture to download and
 install the appropriate binary.`,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		a := args[0]
 		pa, err := utils.ParseArgs(a)
 		if err != nil {
@@ -80,18 +139,29 @@ install the appropriate binary.`,
 		ghclient.CheckRateLimit(ctx, client)
 
 		if pa.Version == "latest" || pa.Version == "" {
-			assets := getLatestRelease(ctx, client, pa.Owner, pa.Repo)
+			assets := getLatestReleaseAssets(ctx, client, pa.Owner, pa.Repo)
 
-			downloadAsset(ctx, client, pa.Owner, pa.Repo, assets)
+			asset, err := downloadAsset(ctx, client, pa.Owner, pa.Repo, assets)
+			if err != nil {
+				utils.Logger.Debugf("failed to download asset: %s", asset.Name)
+				return fmt.Errorf("failed to download asset: %w", err)
+			}
+			utils.Logger.Debugf("doing the needful with %s ", asset.Name)
 		} else {
-			assets := getTaggedRelease(ctx, client, pa.Owner, pa.Repo, pa.Version)
+			assets := getTaggedReleaseAssets(ctx, client, pa.Owner, pa.Repo, pa.Version)
 
-			downloadAsset(ctx, client, pa.Owner, pa.Repo, assets)
+			asset, err := downloadAsset(ctx, client, pa.Owner, pa.Repo, assets)
+			if err != nil {
+				utils.Logger.Debugf("failed to download asset: %s", asset.Name)
+				return fmt.Errorf("failed to download asset: %w", err)
+			}
+			utils.Logger.Debugf("doing the needful with %s ", asset.Name)
 		}
+		return nil
 	},
 }
 
-func getLatestRelease(
+func getLatestReleaseAssets(
 	ctx context.Context,
 	client *github.Client,
 	owner, repo string,
@@ -105,7 +175,7 @@ func getLatestRelease(
 	return release.Assets
 }
 
-func getTaggedRelease(
+func getTaggedReleaseAssets(
 	ctx context.Context,
 	client *github.Client,
 	owner, repo, tag string,
@@ -119,22 +189,20 @@ func getTaggedRelease(
 	return release.Assets
 }
 
-func getFile(file string) bool {
-	os := runtime.GOOS
-	arch := runtime.GOARCH
+// matchFile checks if the file name matches the current OS/arch pattern
+func matchFile(file string) bool {
+	// Convert the file string to []byte
+	foa := []byte(file)
 
-	// OS / Arch
-	oa := os + "-" + arch
-
-	// []byte file
-	foa := ([]byte)(file)
-
-	switch true {
-	case regexp.MustCompile(oa).Match(foa):
-		return true
-	default:
-		return false
+	// Check if the file matches any of the pre-compiled patterns
+	for i, re := range osArchRegexes {
+		if re.Match(foa) {
+			utils.Logger.Debugf("File '%s' matched pattern %d: %s", file, i, re.String())
+			return true
+		}
 	}
+	utils.Logger.Debugf("File '%s', did not match any OS/arch pattern", file)
+	return false
 }
 
 func downloadAsset(
@@ -142,18 +210,31 @@ func downloadAsset(
 	client *github.Client,
 	owner, repo string,
 	assets []*github.ReleaseAsset,
-) {
+) (Asset, error) {
+	// assetName
+	var an string
+	var ct string
+	downloadSuccess := false
+
+	utils.Logger.Debugf("assets: %s\n", assets)
 	for _, a := range assets {
-		if getFile(*a.Name) {
+		if matchFile(*a.Name) {
+			an = *a.Name
+			utils.Logger.Debugf("Asset Name: %s", an)
+			ct = *a.ContentType
+			utils.Logger.Debugf("Asset Content Type: %s", ct)
 			ID := *a.ID
+			utils.Logger.Debugf("Asset ID: %d", ID)
 			asset, rurl, err := client.Repositories.DownloadReleaseAsset(ctx,
 				owner, repo, ID, http.DefaultClient)
 			if err != nil {
 				log.Fatal(err)
 			}
 
+			utils.Logger.Debugf("Asset Name: %s", *a.Name)
+
 			if rurl != "" {
-				fmt.Println(rurl)
+				utils.Logger.Debugf("Redirect URL: %s", rurl)
 			}
 
 			file, err := os.Create(*a.Name)
@@ -164,21 +245,47 @@ func downloadAsset(
 
 			bar := progressbar.NewOptions(*a.Size,
 				progressbar.OptionShowBytes(true),
+				progressbar.OptionSetWidth(35), //nolint:mnd
 				progressbar.OptionSetDescription("Downloading..."),
 				progressbar.OptionClearOnFinish())
 
 			_, err = io.Copy(io.MultiWriter(file, bar), asset)
 			if err != nil {
-				log.Fatalf("Error writing file: %s", err)
+				return Asset{}, fmt.Errorf("writing file: %s", err)
 			}
 
 			_, err = os.Stat(file.Name())
 			if err != nil {
 				if os.IsNotExist(err) {
-					fmt.Printf("Failed to download %s: %s", *a.Name, err)
+					return Asset{}, fmt.Errorf("failed to download %s: %s", *a.Name, err)
 				}
 			}
 			fmt.Printf("Successfully downloaded %s\n", *a.Name)
+			downloadSuccess = true
+			break
 		}
 	}
+
+	if !downloadSuccess {
+		return Asset{}, errors.New("no matching asset found for current OS/architecture")
+	}
+
+	return Asset{Name: an, MIMEType: ct}, nil
 }
+
+// func isArchiveByGitHubContentType(contentType string) bool {
+// 	// Common archive content types
+// 	archiveTypes := map[string]bool{
+// 		"application/zip":         true,
+// 		"application/x-tar":       true,
+// 		"application/gzip":        true,
+// 		"application/x-gzip":      true,
+// 		"application/x-xz":        true,
+// 		"application/x-zstd":      true,
+// 		"application/zstd":        true,
+// 		"application/x-zstandard": true,
+// 		"application/zstandard":   true,
+// 	}
+//
+// 	return archiveTypes[contentType]
+// }

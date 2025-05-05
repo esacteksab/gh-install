@@ -17,10 +17,10 @@ builds:
       - darwin
     ldflags:
       - -s -w
-      - -X github.com/{{org}}/{{repo}}/cmd.Version={{.Version}}
-      - -X github.com/{{org}}/{{repo}}/cmd.Date={{.Now.Format "2006-01-02-15:04:05-MST"}}
-      - -X github.com/{{org}}/{{repo}}/cmd.Commit={{.ShortCommit}}
-      - -X github.com/{{org}}/{{repo}}/cmd.BuiltBy=goreleaser
+      - -X github.com/esacteksab/gh-install/cmd.Version={{.Version}}
+      - -X github.com/esacteksab/gh-install/cmd.Date={{.Now.Format "2006-01-02-15:04:05-MST"}}
+      - -X github.com/esacteksab/gh-install/cmd.Commit={{.ShortCommit}}
+      - -X github.com/esacteksab/gh-install/cmd.BuiltBy=goreleaser
 archives:
   - formats: binary
     # this name template makes the OS and Arch compatible with the results of `uname`.

@@ -39,6 +39,17 @@ fmt:
 	go tool -modfile=go.tool.mod golines --base-formatter=gofumpt -w .
 	go tool -modfile=go.tool.mod gofumpt -l -w -extra .
 
+.PHONY: install
+install: build
+
+	cp dist/gh-install_linux_amd64_v1/gh-install .
+
+	gh ext remove install
+
+	gh ext install .
+
+	-gh install --version
+
 .PHONY: lint
 lint:
 	golangci-lint run -v
