@@ -30,6 +30,7 @@ _site/
 # Test binary, built with `go test -c`
 *.test
 *.zip
+gh-install
 # Go workspace file
 go.work
 go.work.sum

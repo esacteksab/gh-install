@@ -68,6 +68,9 @@ func ParseArgs(argString string) (ParsedArgs, error) {
 		owner = orParts[0]
 		repo = orParts[1]
 		version = "latest" // Default version
+		Logger.Debugf("Owner: %s", owner)
+		Logger.Debugf("Repo: %s", repo)
+		Logger.Debugf("Version: %s", version)
 	}
 
 	// Basic validation: owner and repo shouldn't contain slashes or @
