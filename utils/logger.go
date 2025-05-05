@@ -5,21 +5,21 @@ package utils
 import (
 	"os"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/log"
 )
 
-var Logger *log.Logger
-
+// The commented out code below was in the original file.
+// It's preserved here for reference but is not currently used.
+//
 // validFilenameChars = regexp.MustCompile(`^[a-zA-Z0-9_\-\.]+$`)
-
+//
 // const (
 // 	// Max filename length (common limit)
 // 	maxFilenameLength = 255
 // )
-
+//
 // doesExist checks if a file or directory exists at the specified path.
 //
 // This function uses os.Stat to determine if the path exists in the filesystem.
@@ -38,63 +38,83 @@ var Logger *log.Logger
 // 	return true
 // }
 
-// createLogger creates and configures the package-level Logger instance
-// based on the desired verbosity.
+// CreateLogger creates and configures the package-level Logger instance
+// based on the desired verbosity. This function can create a new logger
+// or reconfigure an existing one.
+//
+// -verbose: Boolean indicating if debug-level logging should be enabled.
 func CreateLogger(verbose bool) {
 	var level log.Level
 	var reportCaller, reportTimestamp bool
 	var timeFormat string
 
-	// Define options based on verbose
+	// Configure logger options based on verbose flag
 	if verbose {
-		reportCaller = true
-		reportTimestamp = true
-		timeFormat = "2006/01/02 15:04:05"
-		level = log.DebugLevel
+		// In verbose mode, show more detailed log information
+		reportCaller = true                // Include the caller's file and line number
+		reportTimestamp = true             // Include timestamps in log messages
+		timeFormat = "2006/01/02 15:04:05" // Use standard date/time format
+		level = log.DebugLevel             // Show debug-level messages
 	} else {
-		reportCaller = false
-		reportTimestamp = false
-		timeFormat = time.Kitchen
-		level = log.InfoLevel
+		// In normal mode, show minimal log information
+		reportCaller = false    // Don't include caller information
+		reportTimestamp = false // Don't include timestamps
+		timeFormat = ""         // No time format needed
+		level = log.InfoLevel   // Only show info-level and higher messages
 	}
 
-	var instanceToUse *log.Logger // Use a local variable first
+	// Use a local variable first before assigning to the package-level Logger
+	var instanceToUse *log.Logger
 
+	// Create a new logger if one doesn't exist yet
 	if Logger == nil {
 		instanceToUse = log.NewWithOptions(os.Stderr, log.Options{
-			ReportCaller:    reportCaller,
-			ReportTimestamp: reportTimestamp,
-			TimeFormat:      timeFormat,
-			Level:           level, // Set level on creation
+			ReportCaller:    reportCaller,    // Whether to include caller info
+			ReportTimestamp: reportTimestamp, // Whether to show timestamps
+			TimeFormat:      timeFormat,      // Format for timestamps
+			Level:           level,           // Minimum log level to display
 		})
+
+		// Safety check for logger creation
 		if instanceToUse == nil {
-			os.Exit(1)
+			os.Exit(1) // Exit if logger creation failed
 		}
 	} else {
-		instanceToUse = Logger // Reconfigure the existing package Logger
-		instanceToUse.SetLevel(level)
-		instanceToUse.SetReportTimestamp(reportTimestamp)
-		instanceToUse.SetTimeFormat(timeFormat)
-		instanceToUse.SetReportCaller(reportCaller)
+		// Reconfigure the existing logger if it already exists
+		instanceToUse = Logger
+		instanceToUse.SetLevel(level)                     // Update log level
+		instanceToUse.SetReportTimestamp(reportTimestamp) // Update timestamp display
+		instanceToUse.SetTimeFormat(timeFormat)           // Update time format
+		instanceToUse.SetReportCaller(reportCaller)       // Update caller reporting
 	}
 
-	maxWidth := 4 // Use lowercase for local var
+	// Configure custom styles for log levels
+	maxWidth := 4 // Width for level display in log messages
 	styles := log.DefaultStyles()
+
+	// Customize debug level style - cyan color
 	styles.Levels[log.DebugLevel] = lipgloss.NewStyle().
-		SetString(strings.ToUpper(log.DebugLevel.String())).
-		Bold(true).MaxWidth(maxWidth).Foreground(lipgloss.Color("14"))
+		SetString(strings.ToUpper(log.DebugLevel.String())).           // "DEBUG"
+		Bold(true).MaxWidth(maxWidth).Foreground(lipgloss.Color("14")) // Cyan color
+
+	// Customize fatal level style - red color
 	styles.Levels[log.FatalLevel] = lipgloss.NewStyle().
-		SetString(strings.ToUpper(log.FatalLevel.String())).
-		Bold(true).MaxWidth(maxWidth).Foreground(lipgloss.Color("9"))
+		SetString(strings.ToUpper(log.FatalLevel.String())).          // "FATAL"
+		Bold(true).MaxWidth(maxWidth).Foreground(lipgloss.Color("9")) // Red color
+
+	// Apply the styles to the logger
 	instanceToUse.SetStyles(styles)
 
-	Logger = instanceToUse // Assign the created/reconfigured instance
+	// Set the package-level Logger variable to our configured instance
+	Logger = instanceToUse
 
+	// Also set this as the default logger for the log package
 	log.SetDefault(Logger)
 
-	// Check Logger again just to be paranoid before logging
+	// Final verification that Logger was properly initialized
 	if Logger != nil {
-		// Use the package Logger variable for the final confirmation log
+		// Log the configuration at debug level
+		// This will only be visible if verbose mode is enabled
 		Logger.Debugf(
 			"Logger configured. Verbose: %t, Level set to: %s",
 			verbose,
@@ -103,6 +123,9 @@ func CreateLogger(verbose bool) {
 	}
 }
 
+// The commented out code below was in the original file.
+// It's preserved here for reference but is not currently used.
+//
 // validateFilePath checks if a given path string represents a simple, safe filename
 // intended for use within the current directory.
 // It performs checks for:
