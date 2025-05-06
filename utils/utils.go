@@ -3,7 +3,13 @@
 package utils
 
 import (
+	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
@@ -193,4 +199,112 @@ func MatchFile(file string) bool {
 	// No match found
 	Logger.Debugf("File '%s' did not match any OS/arch pattern", file)
 	return false
+}
+
+// HashFile calculates the SHA256 checksum of a file.
+// Returns the hex-encoded checksum string and an error if any occurs.
+func HashFile(assetPath string) (string, error) { // Added error return
+	safeFile := filepath.Clean(assetPath)
+	file, err := os.Open(safeFile)
+	if err != nil {
+		// Return error instead of Fatal
+		return "", fmt.Errorf("failed to open file '%s' for hashing: %w", safeFile, err)
+	}
+	defer file.Close() //nolint:errcheck
+
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		// Return error instead of Fatal
+		return "", fmt.Errorf("failed to read file '%s' for hashing: %w", safeFile, err)
+	}
+
+	checksum := hex.EncodeToString(hash.Sum(nil))
+	Logger.Debugf("SHA256 checksum for '%s': %s", safeFile, checksum)
+
+	return checksum, nil // Return checksum and nil error
+}
+
+var (
+	// Compile regex patterns once at package level
+	checksumFileRegex = regexp.MustCompile(`(?i)_?checksums?\.txt$|_?checksums?`)
+
+	// Use a map for O(1) lookup of algorithm extensions
+	algorithmExts = map[string]bool{
+		".sha256":   true,
+		".sha512":   true,
+		".sha1":     true,
+		".crc32":    true,
+		".md5":      true,
+		".sha224":   true,
+		".sha384":   true,
+		".sha3-256": true,
+		".sha3-512": true,
+		".sha3-224": true,
+		".sha3-384": true,
+		".blake2s":  true,
+		".blake2b":  true,
+	}
+)
+
+func IsChecksumFile(file string) bool {
+	// Pattern 1: Check for "checksums.txt" pattern first
+	if checksumFileRegex.MatchString(file) {
+		return true
+	}
+
+	// Pattern 2: Check for algorithm extension
+	ext := filepath.Ext(strings.ToLower(file))
+	if _, ok := algorithmExts[ext]; ok {
+		return true
+	}
+
+	return false
+}
+
+func ParseChecksumFile(checksumFilePath, targetFilename string) (string, error) {
+	safeChecksumFile := filepath.Clean(checksumFilePath)
+	file, err := os.Open(safeChecksumFile)
+	if err != nil {
+		return "", fmt.Errorf("failed to open checksum file '%s': %w", checksumFilePath, err)
+	}
+	defer file.Close() //nolint:errcheck
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") { // Skip empty lines and comments
+			continue
+		}
+
+		// Split by whitespace. Expecting parts like [checksum, filename]
+		parts := strings.Fields(line)
+		if len(parts) < 2 { //nolint:mnd
+			Logger.Debugf("Skipping malformed line in checksum file: %s", line)
+			continue
+		}
+
+		checksum := parts[0]
+		filename := parts[len(parts)-1] // Filename is usually the last part
+
+		// Sometimes filenames in checksum files have a leading '*' or './'
+		filename = strings.TrimPrefix(filename, "*")
+		filename = strings.TrimPrefix(filename, "./")
+
+		if filename == targetFilename {
+			Logger.Debugf(
+				"Found checksum '%s' for target '%s' in file '%s'",
+				checksum,
+				targetFilename,
+				checksumFilePath,
+			)
+			return checksum, nil // Found the checksum for the target file
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return "", fmt.Errorf("error reading checksum file '%s': %w", checksumFilePath, err)
+	}
+
+	// If loop finishes without finding the file
+	return "", fmt.Errorf("checksum for '%s' not found in '%s'", targetFilename, checksumFilePath)
 }
