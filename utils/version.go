@@ -52,6 +52,5 @@ func BuildVersion(Version, Commit, Date, BuiltBy string) string {
 			info.Main.Sum,     // The checksum of the module as recorded in go.sum
 		)
 	}
-
 	return result
 }
