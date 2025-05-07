@@ -12,9 +12,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/adrg/xdg"
 	"github.com/fatih/color"
 	"github.com/google/go-github/v71/github"
-
 	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
 
@@ -24,13 +24,15 @@ import (
 
 // Build information variables populated at build time
 var (
-	Version string // Application version
-	Date    string // Build date
-	Commit  string // Git commit hash
-	BuiltBy string // Builder identifier
-	green   = color.New(color.FgGreen).SprintFunc()
-	red     = color.New(color.FgRed).SprintFunc()
-	yellow  = color.New(color.FgYellow).SprintFunc()
+	binNameFlag string // binNameFlag is the value from the --binName flag
+	pathFlag    string // pathFlag is the value from the --path flag
+	Version     string // Application version
+	Date        string // Build date
+	Commit      string // Git commit hash
+	BuiltBy     string // Builder identifier
+	green       = color.New(color.FgGreen).SprintFunc()
+	red         = color.New(color.FgRed).SprintFunc()
+	yellow      = color.New(color.FgYellow).SprintFunc()
 )
 
 // Asset represents a successfully downloaded and verified release asset
@@ -44,53 +46,36 @@ type Asset struct {
 const ghInstallInitDebugEnv = "GH_INSTALL_INIT_DEBUG"
 
 // init is automatically called when the package is loaded.
-// It initializes the logger and sets version information for the command.
 func init() {
-	// Create initial Logger with default log level (Info)
+	// Creates initial logger with log level info
 	utils.CreateLogger(false)
-
-	// Format and set version information for the command
 	rootCmd.Version = utils.BuildVersion(Version, Commit, Date, BuiltBy)
-
-	// Customize how the version is printed when `gh install --version` is run
 	rootCmd.SetVersionTemplate(`{{printf "Version %s" .Version}}`)
+
+	// Path to save binary
+	rootCmd.PersistentFlags().
+		StringVarP(&pathFlag, "path", "p", "", "directory location to save binary")
+	// Binary Name
+	rootCmd.PersistentFlags().StringVarP(&binNameFlag, "binName", "b", "", "name to save binary as")
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
-// This is called by main.main(). It only needs to happen once to the rootCmd.
-//
-// Returns: Does not return a value, but exits the program with status code 1 if an error occurs.
 func Execute() {
-	// Check environment variable for initial verbosity level
 	debugEnvVal := os.Getenv(ghInstallInitDebugEnv)
-
-	// Parse boolean value from environment - accepts "true", "TRUE", "1", etc.
 	initialVerbose, _ := strconv.ParseBool(debugEnvVal)
-	// If parsing fails (empty string, invalid value), initialVerbose remains false
-
-	// Create/reconfigure logger based on environment variable
 	utils.CreateLogger(initialVerbose)
-
-	// This debug message will only appear if GH_INSTALL_INIT_DEBUG is set to true
 	utils.Logger.Debugf(
 		"Initial logger created in Execute(). Initial Verbose based on %s: %t",
 		ghInstallInitDebugEnv,
 		initialVerbose,
 	)
-
-	// Initialize OS and architecture detection for matching release assets
 	utils.GetOSArch()
-
-	// Execute the root command. If an error occurs, exit with error code
 	if err := rootCmd.Execute(); err != nil {
-		// Use the logger for consistency, though Printf is also fine here.
 		utils.Logger.Errorf("error: %s", err)
 		os.Exit(1)
 	}
 }
 
-// rootCmd represents the base command when called without any subcommands.
-// It's the entry point for the `gh install` command.
 var rootCmd = &cobra.Command{
 	Use:           "install owner/repo[@version]",
 	SilenceUsage:  true,
@@ -99,35 +84,25 @@ var rootCmd = &cobra.Command{
 	Long: `gh installs binaries published on GitHub releases.
 Detects Operating System and Architecture to download and
 install the appropriate binary. Includes checksum verification if available.`,
-	Args: cobra.ExactArgs(1), // Ensure exactly one argument is provided
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Expect the first argument to be in the format owner/repo[@version]
 		a := args[0]
-
-		// Parse the argument string into owner, repo, and optional version
 		pa, err := utils.ParseArgs(a)
 		if err != nil {
-			// Return the error to cobra for consistent error handling
 			return fmt.Errorf("invalid argument: %w", err)
 		}
 
-		// Create a background context for API calls
 		ctx := context.Background()
-
-		// Initialize the GitHub client
 		client, err := ghclient.NewClient(ctx)
 		if err != nil {
 			utils.Logger.Errorf("Failed to initialize GitHub client: %v", err)
 			return fmt.Errorf("failed to initialize GitHub client: %v", err)
 		}
-
-		// Check and log the current GitHub API rate limit
 		ghclient.CheckRateLimit(ctx, client)
 
 		var assets []*github.ReleaseAsset
-		var releaseTag string // To store the actual tag name (latest or specific)
+		var releaseTag string
 
-		// Get assets based on version specified
 		if pa.Version == "latest" || pa.Version == "" {
 			utils.Logger.Infof("Fetching assets for latest release of %s/%s", pa.Owner, pa.Repo)
 			release, err := getLatestRelease(ctx, client, pa.Owner, pa.Repo)
@@ -135,7 +110,7 @@ install the appropriate binary. Includes checksum verification if available.`,
 				return fmt.Errorf("could not get latest release: %w", err)
 			}
 			assets = release.Assets
-			releaseTag = release.GetTagName() // Get the actual tag name for "latest"
+			releaseTag = release.GetTagName()
 			utils.Logger.Infof("Latest release tag: %s", releaseTag)
 		} else {
 			utils.Logger.Infof("Fetching assets for release tag '%s' of %s/%s", pa.Version, pa.Owner, pa.Repo)
@@ -144,14 +119,13 @@ install the appropriate binary. Includes checksum verification if available.`,
 				return fmt.Errorf("could not get release for tag '%s': %w", pa.Version, err)
 			}
 			assets = release.Assets
-			releaseTag = release.GetTagName() // Tag name is the one requested
+			releaseTag = release.GetTagName()
 		}
 
 		if len(assets) == 0 {
 			return fmt.Errorf("no assets found for release '%s'", releaseTag)
 		}
 
-		// Download the appropriate asset for current OS/architecture and verify checksum
 		downloadedAsset, err := findDownloadAndVerifyAsset(
 			ctx,
 			client,
@@ -161,19 +135,14 @@ install the appropriate binary. Includes checksum verification if available.`,
 			http.DefaultClient,
 		)
 		if err != nil {
-			// Error already logged within the function, just return it
-			return err // Cobra will print this error
+			return err
 		}
 
-		// Success
 		utils.Logger.Infof("Successfully downloaded and verified: %s", downloadedAsset.Name)
 		utils.Logger.Infof("Asset saved to: %s", downloadedAsset.Path)
 		utils.Logger.Debugf("Asset MIME Type: %s", downloadedAsset.MIMEType)
-
-		// Add subsequent steps here (e.g., unpacking, moving to bin)
 		utils.Logger.Info(">>> Next steps (unpacking, installation) are not yet implemented. <<<")
-
-		return nil // Indicate success to Cobra
+		return nil
 	},
 }
 
@@ -187,10 +156,14 @@ func getLatestRelease(
 		if resp != nil && resp.StatusCode == http.StatusNotFound {
 			return nil, fmt.Errorf("repository %s/%s not found or has no releases", owner, repo)
 		}
+		rateLimitInfo := ""
+		if resp != nil {
+			rateLimitInfo = resp.Rate.String()
+		}
 		return nil, fmt.Errorf(
 			"failed to get latest release: %w (Rate Limit: %s)",
 			err,
-			resp.Rate.String(),
+			rateLimitInfo,
 		)
 	}
 	if release == nil {
@@ -199,7 +172,6 @@ func getLatestRelease(
 	return release, nil
 }
 
-// getTaggedRelease retrieves the full release object for a specific tag.
 func getTaggedRelease(
 	ctx context.Context,
 	client *github.Client,
@@ -210,11 +182,15 @@ func getTaggedRelease(
 		if resp != nil && resp.StatusCode == http.StatusNotFound {
 			return nil, fmt.Errorf("release with tag '%s' not found in %s/%s", tag, owner, repo)
 		}
+		rateLimitInfo := ""
+		if resp != nil {
+			rateLimitInfo = resp.Rate.String()
+		}
 		return nil, fmt.Errorf(
 			"failed to get release by tag '%s': %w (Rate Limit: %s)",
 			tag,
 			err,
-			resp.Rate.String(),
+			rateLimitInfo,
 		)
 	}
 	if release == nil {
@@ -223,15 +199,16 @@ func getTaggedRelease(
 	return release, nil
 }
 
-// downloadAndSaveAsset downloads a specific release asset and saves it locally.
-// Returns the path to the saved file and any error encountered.
+// downloadAndSaveAsset downloads a specific release asset and saves it to targetSavePath.
+// Returns the path where the file was saved (which is targetSavePath on success) and any error.
 func downloadAndSaveAsset(
 	ctx context.Context,
 	client *github.Client,
 	owner, repo string,
 	asset *github.ReleaseAsset,
 	httpClient *http.Client,
-) (filePath string, err error) { // Changed return signature
+	targetSavePath string,
+) (filePath string, err error) {
 	if asset == nil || asset.Name == nil || asset.ID == nil || asset.Size == nil {
 		return "", errors.New("asset has missing information (name, id, or size)")
 	}
@@ -241,10 +218,11 @@ func downloadAndSaveAsset(
 	assetSize := *asset.Size
 
 	utils.Logger.Debugf(
-		"Initiating download for asset: %s (ID: %d, Size: %d)",
+		"Initiating download for asset: %s (ID: %d, Size: %d) to target path: %s",
 		assetName,
 		assetID,
 		assetSize,
+		targetSavePath,
 	)
 
 	rc, redirectURL, err := client.Repositories.DownloadReleaseAsset(
@@ -258,13 +236,9 @@ func downloadAndSaveAsset(
 		return "", fmt.Errorf("error initiating download for '%s': %w", assetName, err)
 	}
 	if rc == nil {
-		// This case should ideally not happen if err is nil, but good to check.
-		// If redirectURL is present, the http client usually handles it automatically.
-		// If DownloadReleaseAsset returns a redirectURL, it means the underlying http.Client
-		// was configured *not* to follow redirects, which isn't the default.
 		if redirectURL != "" {
 			utils.Logger.Warnf(
-				"Download for '%s' resulted in a redirect URL (%s) but no reader. This might indicate an issue with the HTTP client configuration.",
+				"Download for '%s' resulted in a redirect URL (%s) but no reader.",
 				assetName,
 				redirectURL,
 			)
@@ -280,37 +254,36 @@ func downloadAndSaveAsset(
 	}
 	defer rc.Close() //nolint:errcheck
 
-	// If we got a redirect URL *and* a reader, log it but proceed.
 	if redirectURL != "" {
 		utils.Logger.Warnf(
-			"Received both a reader and a redirect URL ('%s') for asset '%s'. Proceeding with download from reader.",
+			"Received both a reader and a redirect URL ('%s') for asset '%s'. Proceeding with download.",
 			redirectURL,
 			assetName,
 		)
 	}
 
-	// Save the asset data to a local file
-	localPath := filepath.Clean(filepath.Base(assetName)) // Save in current dir, clean the name
-	err = saveAssetToFile(rc, localPath, assetName, int64(assetSize))
+	// Use the provided targetSavePath to save the file
+	err = saveAssetToFile(rc, targetSavePath, assetName, int64(assetSize))
 	if err != nil {
-		return "", err // Error already contains context
+		// Error already contains context from saveAssetToFile
+		return targetSavePath, err // Return targetSavePath even on error for potential cleanup
 	}
 
 	// Return the path where the file was saved
-	return localPath, nil
+	return targetSavePath, nil
 }
 
 // saveAssetToFile saves asset data from a reader to a local file with progress display.
-// Takes the localPath where the file should be created.
+// localPath is the exact path where the file should be created.
+// displayName is the original asset name for the progress bar.
 func saveAssetToFile(rc io.ReadCloser, localPath, displayName string, assetSize int64) error {
-	utils.Logger.Debugf("Saving asset '%s' to local path '%s'", displayName, localPath)
+	utils.Logger.Debugf("Saving asset '%s' to specific local path '%s'", displayName, localPath)
 
-	// Create the output file
+	// Create the output file at the specified localPath
 	file, err := os.Create(localPath) //nolint:gosec
 	if err != nil {
 		return fmt.Errorf("error creating file '%s': %w", localPath, err)
 	}
-	// Use a flag to ensure file closing happens even if Copy fails mid-way
 	var fileClosed bool
 	defer func() {
 		if !fileClosed {
@@ -318,7 +291,6 @@ func saveAssetToFile(rc io.ReadCloser, localPath, displayName string, assetSize 
 		}
 	}()
 
-	// Setup progress bar using the display name
 	bar := progressbar.NewOptions64(
 		assetSize,
 		progressbar.OptionEnableColorCodes(true),
@@ -337,34 +309,31 @@ func saveAssetToFile(rc io.ReadCloser, localPath, displayName string, assetSize 
 		progressbar.OptionClearOnFinish(),
 	)
 
-	// Copy data from the reader to both the file and the progress bar
 	_, copyErr := io.Copy(io.MultiWriter(file, bar), rc)
-
-	// Close the file explicitly *before* checking copyErr to ensure data is flushed
 	closeErr := file.Close()
-	fileClosed = true // Mark file as closed
+	fileClosed = true
 
-	// Handle errors
 	if copyErr != nil {
-		utils.Logger.Errorf("Error during download/copy for '%s': %v", displayName, copyErr)
-		// Attempt cleanup on copy error
-		_ = os.Remove(localPath)
-		return fmt.Errorf("error saving data for '%s': %w", displayName, copyErr)
+		utils.Logger.Errorf(
+			"Error during download/copy for '%s' to '%s': %v",
+			displayName,
+			localPath,
+			copyErr,
+		)
+		_ = os.Remove(localPath) // Attempt cleanup on copy error
+		return fmt.Errorf("error saving data for '%s' to '%s': %w", displayName, localPath, copyErr)
 	}
-
 	if closeErr != nil {
 		utils.Logger.Errorf("Error closing file '%s' after download: %v", localPath, closeErr)
+		// Do not return error here if copy was successful, but log it.
 	}
 
-	utils.Logger.Printf(green("✔")+" Successfully downloaded %s", displayName)
+	utils.Logger.Printf(green("✔")+" Successfully downloaded %s to %s", displayName, localPath)
 	return nil
 }
 
-// findDownloadAndVerifyAsset identifies the main asset and checksum file,
-// downloads them, and verifies.
-// gocyclo:ignore // Function follows a clear sequential process; further
-// extraction may reduce readability.
-// funlnen:ignore // 105 > 100, close enough
+// need to address gocyclo
+// funlen 52 > 50 -- maybe not an issue
 func findDownloadAndVerifyAsset( //nolint:gocyclo,funlen
 	ctx context.Context,
 	client *github.Client,
@@ -384,39 +353,33 @@ func findDownloadAndVerifyAsset( //nolint:gocyclo,funlen
 		len(assets),
 	)
 
-	// Identify potential assets
 	for _, asset := range assets {
 		if asset == nil || asset.Name == nil || asset.ID == nil {
 			utils.Logger.Debug("Skipping asset with missing name or ID.")
 			continue
 		}
 		assetName := *asset.Name
-
 		if utils.IsChecksumFile(assetName) {
 			if checksumAssetToDownload == nil {
 				utils.Logger.Debugf("Found potential checksum file: %s", assetName)
 				checksumAssetToDownload = asset
 			} else {
-				utils.Logger.Warnf("Found multiple potential checksum files. Using the first one found: '%s'. Ignoring '%s'.", *checksumAssetToDownload.Name, assetName)
+				utils.Logger.Warnf("Found multiple checksum files. Using '%s', ignoring '%s'.", *checksumAssetToDownload.Name, assetName)
 			}
 			continue
 		}
-
 		if utils.MatchFile(assetName) {
 			if mainAssetToDownload == nil {
-				utils.Logger.Debugf("Found potential main asset matching OS/Arch: %s", assetName)
+				utils.Logger.Debugf("Found potential main asset: %s", assetName)
 				mainAssetToDownload = asset
 			} else {
-				utils.Logger.Warnf("Found multiple assets matching OS/Arch. Using the first one found: '%s'. Ignoring '%s'.", *mainAssetToDownload.Name, assetName)
+				utils.Logger.Warnf("Found multiple matching assets. Using '%s', ignoring '%s'.", *mainAssetToDownload.Name, assetName)
 			}
 		}
 	}
 
-	// Validate findings
 	if mainAssetToDownload == nil {
-		utils.Logger.Error(
-			"No asset matching the current OS/Architecture was found in the release.",
-		)
+		utils.Logger.Error("No asset matching OS/Arch found.")
 		return Asset{}, errors.New("no suitable asset found for download")
 	}
 
@@ -424,144 +387,178 @@ func findDownloadAndVerifyAsset( //nolint:gocyclo,funlen
 	if checksumAssetToDownload != nil {
 		utils.Logger.Infof("Selected checksum file: %s", *checksumAssetToDownload.Name)
 	} else {
-		utils.Logger.Warn(yellow("No checksum file found in the release assets. Proceeding without verification."))
+		utils.Logger.Warn(yellow("No checksum file found. Proceeding without verification."))
 	}
 
+	// Determine Save Path for Main Asset
+	var finalMainAssetSaveName string
+	if binNameFlag != "" { // User specified --binName
+		finalMainAssetSaveName = binNameFlag
+	} else {
+		// Default name: first part of original asset name, split by '_'
+		sbn := strings.Split(*mainAssetToDownload.Name, "_")
+		finalMainAssetSaveName = sbn[0]
+		// Consider if asset name is simple like "mytool" or "mytool.exe"
+		if len(sbn) == 1 {
+			finalMainAssetSaveName = *mainAssetToDownload.Name // use full original name if no underscore
+			// If it's an archive and user didn't specify binName, keep original name to preserve extension
+			// If it's not an archive, and has an extension, e.g. mytool.exe, this is fine.
+			// This part could be refined based on whether it's an archive or raw binary.
+			// For now, if sbn[0] is the full name, use it. If it's part of a complex name, use sbn[0].
+			// A simple robust default if no binNameFlag: use the original asset name.
+			// Let's refine the default:
+			// If it's likely a raw binary (not archive, not installer usually ending in .exe, .dmg etc)
+			// then sbn[0] might be good. Otherwise, *mainAssetToDownload.Name is safer.
+			// For now, sticking to your provided logic:
+			// finalMainAssetSaveName = sbn[0]; is already set.
+		}
+	}
+
+	var targetMainAssetDir string
+	switch {
+	case pathFlag != "" && pathFlag != ".": // User specified --path directory
+		targetMainAssetDir = filepath.Clean(pathFlag)
+	case pathFlag == ".": // User specified current directory
+		targetMainAssetDir = "."
+	default: // Default to XDG Bin Home
+		targetMainAssetDir = xdg.BinHome
+	}
+
+	// Ensure the target directory exists (unless it's current dir)
+	if targetMainAssetDir != "." {
+		if err := os.MkdirAll(targetMainAssetDir, 0o750); err != nil { //nolint:mnd
+			return Asset{}, fmt.Errorf(
+				"failed to create target directory '%s': %w",
+				targetMainAssetDir,
+				err,
+			)
+		}
+	}
+	targetMainAssetSavePath := filepath.Join(targetMainAssetDir, finalMainAssetSaveName)
+	utils.Logger.Debugf(
+		"Main asset ('%s') will be saved as: %s",
+		*mainAssetToDownload.Name,
+		targetMainAssetSavePath,
+	)
+
 	// Download Main Asset
-	mainAssetPath, err := downloadAndSaveAsset(
-		ctx,
-		client,
-		owner,
-		repo,
-		mainAssetToDownload,
-		httpClient,
+	downloadedMainAssetActualPath, err := downloadAndSaveAsset(
+		ctx, client, owner, repo, mainAssetToDownload, httpClient, targetMainAssetSavePath,
 	)
 	if err != nil {
+		// downloadAndSaveAsset now includes targetMainAssetSavePath in its error reporting if relevant
 		return Asset{}, fmt.Errorf(
 			"failed to download main asset '%s': %w",
 			*mainAssetToDownload.Name,
 			err,
 		)
 	}
+	// downloadedMainAssetActualPath should be == targetMainAssetSavePath on success
 
 	// Download Checksum File and Verify (if found)
 	if checksumAssetToDownload != nil {
-		checksumAssetPath, err := downloadAndSaveAsset(
+		// Checksum file is always downloaded to the current directory with its original name
+		targetChecksumAssetSavePath := filepath.Clean(filepath.Base(*checksumAssetToDownload.Name))
+		utils.Logger.Debugf(
+			"Checksum asset ('%s') will be saved as: %s",
+			*checksumAssetToDownload.Name,
+			targetChecksumAssetSavePath,
+		)
+
+		actualChecksumAssetPath, checksumErr := downloadAndSaveAsset(
 			ctx,
 			client,
 			owner,
 			repo,
 			checksumAssetToDownload,
 			httpClient,
+			targetChecksumAssetSavePath,
 		)
-		if err != nil {
-			// Log error, warn user, but DO NOT remove mainAssetPath here.
-			// Verification is skipped, leaving the potentially unverifiable main asset.
-			// Allowing it to continue to exist allows for investigation by the end user.
-			// May make sense to put this functionality behind `--verbose` and != Verbose, os.Remove
+		if checksumErr != nil {
 			utils.Logger.Errorf(
 				red(
-					"Failed to download checksum file '%s': %v. Checksum verification will be skipped.",
+					"Failed to download checksum file '%s': %v. Checksum verification will be SKIPPED.",
 				),
 				*checksumAssetToDownload.Name,
-				err,
+				checksumErr,
 			)
 			utils.Logger.Warnf(
-				yellow(
-					"Verification skipped due to checksum file download error. The integrity of '%s' is NOT confirmed.",
-				),
-				mainAssetPath,
+				yellow("Integrity of '%s' (at %s) is NOT confirmed."),
+				*mainAssetToDownload.Name, downloadedMainAssetActualPath,
 			)
 			// Proceed without verification in this case
 		} else {
-			err = verifyAssetChecksum(mainAssetPath, *mainAssetToDownload.Name, checksumAssetPath)
-			if err != nil {
-				// Verification failed, helper function handled logging and cleanup.
-				// Return the error it provided.
-				return Asset{}, err
+			// Pass the actual path of the (potentially renamed/relocated) main asset
+			// and its original name for checksum lookup
+			verifyErr := verifyAssetChecksum(downloadedMainAssetActualPath, *mainAssetToDownload.Name, actualChecksumAssetPath)
+			if verifyErr != nil {
+				// Verification failed. verifyAssetChecksum handles cleanup of downloadedMainAssetActualPath.
+				return Asset{}, verifyErr // verifyErr already contains context
 			}
-			// Verification successful, checksum file removed by helper. Continue.
+			// Verification successful, checksum file (actualChecksumAssetPath) removed by verifyAssetChecksum.
 		}
 	}
 
-	// --- 5. Return info about the main asset ---
 	return Asset{
 		Name:     *mainAssetToDownload.Name,
-		Path:     mainAssetPath,
-		MIMEType: *mainAssetToDownload.ContentType, // Get ContentType here
+		Path:     downloadedMainAssetActualPath,
+		MIMEType: *mainAssetToDownload.ContentType,
 	}, nil
-} // End of findDownloadAndVerifyAsset
+}
 
-// verifyAssetChecksum handles the process of verifying the main asset against its checksum file.
-// It parses the checksum file, calculates the hash of the main asset, compares them,
-// and cleans up downloaded files based on the outcome.
-// Returns nil on successful verification, otherwise returns an error.
-func verifyAssetChecksum(mainAssetPath, mainAssetName, checksumAssetPath string) error {
+func verifyAssetChecksum(mainAssetDiskPath, mainAssetOriginalName, checksumAssetPath string) error {
 	utils.Logger.Info("Verifying checksum...")
 
-	// 1. Parse the checksum file to find the expected checksum
-	expectedChecksum, err := utils.ParseChecksumFile(checksumAssetPath, mainAssetName)
+	expectedChecksum, err := utils.ParseChecksumFile(checksumAssetPath, mainAssetOriginalName)
 	if err != nil {
 		utils.Logger.Errorf(
-			"Failed to find or parse checksum for '%s' in '%s': %v",
-			mainAssetName,
-			checksumAssetPath,
-			err,
+			"Failed to find/parse checksum for '%s' in '%s': %v",
+			mainAssetOriginalName, checksumAssetPath, err,
 		)
-		// Clean up both files because verification cannot proceed
-		_ = os.Remove(mainAssetPath)
+		_ = os.Remove(mainAssetDiskPath)
 		_ = os.Remove(checksumAssetPath)
 		return fmt.Errorf(
-			"checksum verification failed: could not find entry for '%s' in the checksum file",
-			mainAssetName,
+			"checksum verification failed for '%s': could not find entry in checksum file '%s'",
+			mainAssetOriginalName, filepath.Base(checksumAssetPath),
 		)
 	}
 
-	// 2. Calculate the actual checksum of the downloaded main asset
-	actualChecksum, err := utils.HashFile(
-		mainAssetPath,
-	) // Assumes utils.HashFile returns (string, error)
+	actualChecksum, err := utils.HashFile(mainAssetDiskPath)
 	if err != nil {
 		utils.Logger.Errorf(
-			"Failed to calculate checksum for downloaded file '%s': %v",
-			mainAssetPath,
-			err,
+			"Failed to calculate checksum for downloaded file '%s' (original name '%s'): %v",
+			mainAssetDiskPath, mainAssetOriginalName, err,
 		)
-		// Clean up both files because we can't verify
-		_ = os.Remove(mainAssetPath)
+		_ = os.Remove(mainAssetDiskPath)
 		_ = os.Remove(checksumAssetPath)
 		return fmt.Errorf(
-			"checksum verification failed: could not hash downloaded file '%s'",
-			mainAssetPath,
+			"checksum verification failed: could not hash downloaded file '%s' (original: %s)",
+			mainAssetDiskPath, mainAssetOriginalName,
 		)
 	}
 
-	// 3. Compare checksums (case-insensitive is safer)
 	if !strings.EqualFold(expectedChecksum, actualChecksum) {
-		utils.Logger.Errorf("CHECKSUM MISMATCH for %s!", mainAssetName)
+		utils.Logger.Errorf(
+			"CHECKSUM MISMATCH for %s (file: %s)!",
+			mainAssetOriginalName,
+			mainAssetDiskPath,
+		)
 		utils.Logger.Errorf("  Expected: %s", expectedChecksum)
 		utils.Logger.Errorf("  Actual:   %s", actualChecksum)
-		// Clean up both files due to mismatch
-		_ = os.Remove(mainAssetPath)
+		_ = os.Remove(mainAssetDiskPath)
 		_ = os.Remove(checksumAssetPath)
 		return errors.New(red("checksum mismatch - downloaded file is corrupt or incorrect"))
 	}
 
-	// 4. Success
 	utils.Logger.Print(green("✔") + " Checksum verified successfully.")
-
-	// 5. Clean up the checksum file (optional, but good practice)
 	err = os.Remove(checksumAssetPath)
 	if err != nil {
 		utils.Logger.Warnf(
 			"Could not remove checksum file '%s' after verification: %v",
-			checksumAssetPath,
-			err,
+			checksumAssetPath, err,
 		)
-		// Do not return an error here, verification itself was successful
 	} else {
 		utils.Logger.Debugf("Removed checksum file: %s", checksumAssetPath)
 	}
-
-	return nil // Verification successful
+	return nil
 }

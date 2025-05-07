@@ -41,6 +41,7 @@ require (
 )
 
 require (
+	github.com/adrg/xdg v0.5.3
 	github.com/fatih/color v1.18.0
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.2.1 // indirect
