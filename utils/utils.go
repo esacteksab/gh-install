@@ -23,6 +23,25 @@ var (
 
 	// Pre-compiled regular expressions for matching OS/architecture in filenames
 	osArchRegexes []*regexp.Regexp
+
+	// Compile regex patterns once at package level
+	checksumFileRegex = regexp.MustCompile(`(?i)_?checksums?\.txt$|_?checksums?`)
+
+	algorithmExts = map[string]bool{
+		".sha256":   true,
+		".sha512":   true,
+		".sha1":     true,
+		".crc32":    true,
+		".md5":      true,
+		".sha224":   true,
+		".sha384":   true,
+		".sha3-256": true,
+		".sha3-512": true,
+		".sha3-224": true,
+		".sha3-384": true,
+		".blake2s":  true,
+		".blake2b":  true,
+	}
 )
 
 // ParsedArgs holds the parsed components of the argument string.
@@ -224,28 +243,6 @@ func HashFile(assetPath string) (string, error) { // Added error return
 	return checksum, nil // Return checksum and nil error
 }
 
-var (
-	// Compile regex patterns once at package level
-	checksumFileRegex = regexp.MustCompile(`(?i)_?checksums?\.txt$|_?checksums?`)
-
-	// Use a map for O(1) lookup of algorithm extensions
-	algorithmExts = map[string]bool{
-		".sha256":   true,
-		".sha512":   true,
-		".sha1":     true,
-		".crc32":    true,
-		".md5":      true,
-		".sha224":   true,
-		".sha384":   true,
-		".sha3-256": true,
-		".sha3-512": true,
-		".sha3-224": true,
-		".sha3-384": true,
-		".blake2s":  true,
-		".blake2b":  true,
-	}
-)
-
 func IsChecksumFile(file string) bool {
 	// Pattern 1: Check for "checksums.txt" pattern first
 	if checksumFileRegex.MatchString(file) {
@@ -307,4 +304,8 @@ func ParseChecksumFile(checksumFilePath, targetFilename string) (string, error) 
 
 	// If loop finishes without finding the file
 	return "", fmt.Errorf("checksum for '%s' not found in '%s'", targetFilename, checksumFilePath)
+}
+
+func resetOsArchRegexesForTesting() {
+	osArchRegexes = nil
 }

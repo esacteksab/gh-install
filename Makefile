@@ -56,7 +56,8 @@ lint:
 
 .PHONY: test
 test:
-	go test ./... -cover
+	go test -covermode=atomic -coverprofile=coverdata/coverage.out ./... && echo 'Coverage data collected'
+	go tool cover -html=coverdata/coverage.out -o coverdata/coverage.html
 
 .PHONY: tidy
 tidy:
