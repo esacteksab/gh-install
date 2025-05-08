@@ -4,10 +4,7 @@ package utils
 
 import (
 	"bufio"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -25,23 +22,7 @@ var (
 	osArchRegexes []*regexp.Regexp
 
 	// Compile regex patterns once at package level
-	checksumFileRegex = regexp.MustCompile(`(?i)_?checksums?\.txt$|_?checksums?`)
-
-	algorithmExts = map[string]bool{
-		".sha256":   true,
-		".sha512":   true,
-		".sha1":     true,
-		".crc32":    true,
-		".md5":      true,
-		".sha224":   true,
-		".sha384":   true,
-		".sha3-256": true,
-		".sha3-512": true,
-		".sha3-224": true,
-		".sha3-384": true,
-		".blake2s":  true,
-		".blake2b":  true,
-	}
+	// checksumFileRegex = regexp.MustCompile(`(?i)_?checksums?\.txt$|_?checksums?`)
 )
 
 // ParsedArgs holds the parsed components of the argument string.
@@ -220,49 +201,14 @@ func MatchFile(file string) bool {
 	return false
 }
 
-// HashFile calculates the SHA256 checksum of a file.
-// Returns the hex-encoded checksum string and an error if any occurs.
-func HashFile(assetPath string) (string, error) { // Added error return
-	safeFile := filepath.Clean(assetPath)
-	file, err := os.Open(safeFile)
-	if err != nil {
-		// Return error instead of Fatal
-		return "", fmt.Errorf("failed to open file '%s' for hashing: %w", safeFile, err)
-	}
-	defer file.Close() //nolint:errcheck
-
-	hash := sha256.New()
-	if _, err := io.Copy(hash, file); err != nil {
-		// Return error instead of Fatal
-		return "", fmt.Errorf("failed to read file '%s' for hashing: %w", safeFile, err)
-	}
-
-	checksum := hex.EncodeToString(hash.Sum(nil))
-	Logger.Debugf("SHA256 checksum for '%s': %s", safeFile, checksum)
-
-	return checksum, nil // Return checksum and nil error
-}
-
-func IsChecksumFile(file string) bool {
-	// Pattern 1: Check for "checksums.txt" pattern first
-	if checksumFileRegex.MatchString(file) {
-		return true
-	}
-
-	// Pattern 2: Check for algorithm extension
-	ext := filepath.Ext(strings.ToLower(file))
-	if _, ok := algorithmExts[ext]; ok {
-		return true
-	}
-
-	return false
-}
-
+// ParseChecksumFile (your existing function)
+// Note: For matching, `targetFilename` should ideally be the base name of the file,
+// as checksum files usually list base names.
 func ParseChecksumFile(checksumFilePath, targetFilename string) (string, error) {
 	safeChecksumFile := filepath.Clean(checksumFilePath)
 	file, err := os.Open(safeChecksumFile)
 	if err != nil {
-		return "", fmt.Errorf("failed to open checksum file '%s': %w", checksumFilePath, err)
+		return "", fmt.Errorf("failed to open checksum file '%s': %w", safeChecksumFile, err)
 	}
 	defer file.Close() //nolint:errcheck
 
@@ -273,28 +219,31 @@ func ParseChecksumFile(checksumFilePath, targetFilename string) (string, error) 
 			continue
 		}
 
-		// Split by whitespace. Expecting parts like [checksum, filename]
 		parts := strings.Fields(line)
 		if len(parts) < 2 { //nolint:mnd
-			Logger.Debugf("Skipping malformed line in checksum file: %s", line)
+			Logger.Printf("DEBUG: Skipping malformed line in checksum file: %s", line)
 			continue
 		}
 
 		checksum := parts[0]
-		filename := parts[len(parts)-1] // Filename is usually the last part
+		// Filename in checksum files can be complex, often it's the last part,
+		// but some formats (like BSD sum) might have filename in middle.
+		// For `sha256sum` and `md5sum` output, it's usually the last non-option argument.
+		// A common pattern is `checksum  filename` or `checksum *filename`.
+		filenameInChecksum := parts[len(parts)-1]
 
-		// Sometimes filenames in checksum files have a leading '*' or './'
-		filename = strings.TrimPrefix(filename, "*")
-		filename = strings.TrimPrefix(filename, "./")
+		// Normalize filename found in the checksum file
+		filenameInChecksum = strings.TrimPrefix(filenameInChecksum, "*") // Common for binary mode
+		filenameInChecksum = strings.TrimPrefix(filenameInChecksum, "./")
 
-		if filename == targetFilename {
-			Logger.Debugf(
-				"Found checksum '%s' for target '%s' in file '%s'",
+		if filenameInChecksum == targetFilename {
+			Logger.Printf(
+				"DEBUG: Found expected checksum '%s' for target '%s' in checksum file '%s'",
 				checksum,
 				targetFilename,
 				checksumFilePath,
 			)
-			return checksum, nil // Found the checksum for the target file
+			return checksum, nil
 		}
 	}
 
@@ -302,8 +251,103 @@ func ParseChecksumFile(checksumFilePath, targetFilename string) (string, error) 
 		return "", fmt.Errorf("error reading checksum file '%s': %w", checksumFilePath, err)
 	}
 
-	// If loop finishes without finding the file
-	return "", fmt.Errorf("checksum for '%s' not found in '%s'", targetFilename, checksumFilePath)
+	return "", fmt.Errorf(
+		"checksum for target '%s' not found in checksum file '%s'",
+		targetFilename,
+		checksumFilePath,
+	)
+}
+
+const (
+	// DefaultAlgorithmForGenericChecksums is the algorithm assumed for generic checksum files
+	// like "checksums.txt" when the algorithm cannot be derived from the filename.
+	// GoReleaser uses SHA256 for its generic `_checksums.txt` file.
+	DefaultAlgorithmForGenericChecksums = "sha256"
+)
+
+// VerifyChecksum verifies a local asset against a checksum file.
+// It attempts to determine the algorithm from the checksum file's name.
+// If the checksum file has a generic name (e.g., "project_version_checksums.txt"),
+// it uses `defaultAlgoForGeneric` (which should typically be "sha256" for GoReleaser).
+func VerifyChecksum(
+	assetPath string,
+	checksumFilePath string,
+	defaultAlgoForGeneric string,
+) (bool, string, error) {
+	var determinedAlgorithm string // Renamed for clarity from algorithmToUse
+
+	algoFromExt, found := GetAlgorithmFromFilename(checksumFilePath)
+	if found {
+		determinedAlgorithm = algoFromExt
+		Logger.Printf(
+			"INFO: Using algorithm '%s' derived from checksum file extension: %s",
+			determinedAlgorithm,
+			checksumFilePath,
+		)
+	} else {
+		if defaultAlgoForGeneric == "" {
+			// No algorithm could be determined.
+			// It makes sense to return "" for the algorithm here as none was selected.
+			return false, "", fmt.Errorf(
+				"checksum algorithm not found in checksum file name '%s' and no default algorithm provided for generic checksum files",
+				checksumFilePath,
+			)
+		}
+		determinedAlgorithm = defaultAlgoForGeneric
+		Logger.Printf("INFO: Checksum file '%s' has no algorithm extension. Using default/hint: '%s'", checksumFilePath, determinedAlgorithm)
+	}
+
+	// At this point, `determinedAlgorithm` has the algorithm we intend to use or have derived.
+	// All subsequent errors should return this `determinedAlgorithm`.
+
+	if _, err := GetHasher(determinedAlgorithm); err != nil {
+		return false, determinedAlgorithm, fmt.Errorf(
+			"determined algorithm '%s' is not supported: %w",
+			determinedAlgorithm,
+			err,
+		)
+	}
+
+	targetBaseFilename := filepath.Base(assetPath)
+	expectedChecksum, err := ParseChecksumFile(checksumFilePath, targetBaseFilename)
+	if err != nil {
+		return false, determinedAlgorithm, fmt.Errorf(
+			"failed to parse checksum file '%s' for target '%s': %w",
+			checksumFilePath,
+			targetBaseFilename,
+			err,
+		)
+	}
+
+	Logger.Printf(
+		"INFO: Calculating %s checksum for local asset: %s",
+		strings.ToUpper(determinedAlgorithm),
+		assetPath,
+	)
+	actualChecksum, err := HashFile(assetPath, determinedAlgorithm)
+	if err != nil {
+		return false, determinedAlgorithm, fmt.Errorf(
+			"failed to calculate actual checksum for asset '%s' using %s: %w",
+			assetPath,
+			determinedAlgorithm,
+			err,
+		)
+	}
+
+	if strings.EqualFold(expectedChecksum, actualChecksum) {
+		Logger.Printf("SUCCESS: Checksum VALID for '%s'. Expected: %s, Actual: %s (Algorithm: %s)",
+			assetPath, expectedChecksum, actualChecksum, determinedAlgorithm)
+		return true, determinedAlgorithm, nil
+	}
+
+	Logger.Printf("ERROR: Checksum INVALID for '%s'. Expected: %s, Got: %s (Algorithm: %s)",
+		assetPath, expectedChecksum, actualChecksum, determinedAlgorithm)
+	return false, determinedAlgorithm, fmt.Errorf(
+		"checksum mismatch for '%s': expected '%s', got '%s'",
+		assetPath,
+		expectedChecksum,
+		actualChecksum,
+	)
 }
 
 func resetOsArchRegexesForTesting() {
