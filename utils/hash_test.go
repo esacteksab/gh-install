@@ -99,41 +99,47 @@ func TestHashFile(t *testing.T) {
 	}
 }
 
+// In utils_test.go
+
 func TestVerifyChecksum(t *testing.T) {
 	CreateLogger(true)
 
 	assetContent := []byte("This is the content of our super important asset.")
-	baseAssetPath := "my_asset_v1.0.0_linux_amd64.tar.gz"
+	baseAssetPath := "my_asset_v1.0.0_linux_amd64.tar.gz" // This is the assetNameInChecksumFile
 
 	tempDir := t.TempDir()
-	assetPath := filepath.Join(tempDir, baseAssetPath)
+	assetPathOnDisk := filepath.Join(tempDir, baseAssetPath) // This is the assetPathOnDisk
 
-	err := os.WriteFile(assetPath, assetContent, 0o644)
+	err := os.WriteFile(assetPathOnDisk, assetContent, 0o644)
 	if err != nil {
 		t.Fatalf("Setup: Failed to write asset file: %v", err)
 	}
 
-	expectedSha256, err := HashFile(assetPath, "sha256")
+	expectedSha256, err := HashFile(assetPathOnDisk, "sha256")
 	if err != nil {
 		t.Fatalf("Setup: Failed to hash asset for sha256: %v", err)
 	}
-	expectedSha512, err := HashFile(assetPath, "sha512")
+	expectedSha512, err := HashFile(assetPathOnDisk, "sha512")
 	if err != nil {
 		t.Fatalf("Setup: Failed to hash asset for sha512: %v", err)
 	}
 
 	t.Run("checksum file with algorithm in name", func(t *testing.T) {
-		checksumFileWithAlgoName := filepath.Join(tempDir, baseAssetPath+".sha256")
-		checksumFileWithAlgoContent := fmt.Sprintf("%s  %s", expectedSha256, baseAssetPath)
-		err := os.WriteFile(checksumFileWithAlgoName, []byte(checksumFileWithAlgoContent), 0o644)
+		checksumFilePath := filepath.Join(
+			tempDir,
+			baseAssetPath+".sha256",
+		) // This is the checksumFilePath
+		checksumFileContent := fmt.Sprintf("%s  %s", expectedSha256, baseAssetPath)
+		err := os.WriteFile(checksumFilePath, []byte(checksumFileContent), 0o644)
 		if err != nil {
 			t.Fatalf("Failed to write checksum file with algo: %v", err)
 		}
 
 		valid, algoUsed, err := VerifyChecksum(
-			assetPath,
-			checksumFileWithAlgoName,
-			"this-should-be-ignored",
+			assetPathOnDisk,  // 1. Path to the asset to hash
+			baseAssetPath,    // 2. Name of asset in checksum file
+			checksumFilePath, // 3. Path to the checksum file itself
+			"",               // 4. Default algo (empty means derive or error)
 		)
 		if err != nil {
 			t.Errorf("VerifyChecksum() error = %v, wantErr nil", err)
@@ -147,19 +153,23 @@ func TestVerifyChecksum(t *testing.T) {
 	})
 
 	t.Run("generic checksum file with SHA256 default", func(t *testing.T) {
-		genericChecksumFileName := filepath.Join(tempDir, "myproject_1.0.0_checksums.txt")
+		checksumFilePath := filepath.Join(
+			tempDir,
+			"myproject_1.0.0_checksums.txt",
+		) // This is the checksumFilePath
 		genericChecksumFileContent := fmt.Sprintf(
 			"%s  %s\n# Some other file\n%s  some_other_file.zip",
 			expectedSha256, baseAssetPath, "fakechecksumforsomeotherfile")
-		err := os.WriteFile(genericChecksumFileName, []byte(genericChecksumFileContent), 0o644)
+		err := os.WriteFile(checksumFilePath, []byte(genericChecksumFileContent), 0o644)
 		if err != nil {
 			t.Fatalf("Failed to write generic checksum file: %v", err)
 		}
 
 		valid, algoUsed, err := VerifyChecksum(
-			assetPath,
-			genericChecksumFileName,
-			DefaultAlgorithmForGenericChecksums,
+			assetPathOnDisk,                     // 1.
+			baseAssetPath,                       // 2.
+			checksumFilePath,                    // 3.
+			DefaultAlgorithmForGenericChecksums, // 4.
 		)
 		if err != nil {
 			t.Errorf("VerifyChecksum() error = %v, wantErr nil", err)
@@ -177,21 +187,22 @@ func TestVerifyChecksum(t *testing.T) {
 	})
 
 	t.Run("generic checksum file with SHA512 hint", func(t *testing.T) {
-		genericSha512ChecksumFileName := filepath.Join(
+		checksumFilePath := filepath.Join(
 			tempDir,
 			"myproject_1.0.0_special_checksums.txt",
-		)
+		) // This is checksumFilePath
 		genericSha512ChecksumFileContent := fmt.Sprintf("%s  %s", expectedSha512, baseAssetPath)
-		err := os.WriteFile(
-			genericSha512ChecksumFileName,
-			[]byte(genericSha512ChecksumFileContent),
-			0o644,
-		)
+		err := os.WriteFile(checksumFilePath, []byte(genericSha512ChecksumFileContent), 0o644)
 		if err != nil {
 			t.Fatalf("Failed to write generic SHA512 checksum file: %v", err)
 		}
 
-		valid, algoUsed, err := VerifyChecksum(assetPath, genericSha512ChecksumFileName, "sha512")
+		valid, algoUsed, err := VerifyChecksum(
+			assetPathOnDisk,  // 1.
+			baseAssetPath,    // 2.
+			checksumFilePath, // 3.
+			"sha512",         // 4. Hint/default algo
+		)
 		if err != nil {
 			t.Errorf("VerifyChecksum() error = %v, wantErr nil", err)
 		}
@@ -204,29 +215,40 @@ func TestVerifyChecksum(t *testing.T) {
 	})
 
 	t.Run("deliberate mismatch with different asset", func(t *testing.T) {
-		mismatchAssetPath := filepath.Join(tempDir, "mismatch_asset.dat")
-		err := os.WriteFile(mismatchAssetPath, []byte("different content"), 0o644)
+		mismatchAssetPathOnDisk := filepath.Join(
+			tempDir,
+			"mismatch_asset.dat",
+		) // This is assetPathOnDisk
+		err := os.WriteFile(mismatchAssetPathOnDisk, []byte("different content"), 0o644)
 		if err != nil {
 			t.Fatalf("Failed to write mismatch asset: %v", err)
 		}
 
-		checksumFileForOriginalAsset := filepath.Join(tempDir, baseAssetPath+".sha256")
-		// Ensure this checksum file is written for this subtest, as it might not exist if other tests run in parallel
-		// or if it was cleaned up by a previous TempDir usage.
-		// It's generally safer to create all files needed for a subtest *within* that subtest if they are unique to it.
-		// However, if checksumFileForOriginalAsset is meant to be the one created in "checksum file with algorithm in name",
-		// then file creation here might be redundant but harmless. For isolation, let's ensure it's created.
+		// Checksum file contains checksum for original 'baseAssetPath'
+		checksumFilePath := filepath.Join(tempDir, baseAssetPath+".sha256")
 		checksumContentForOriginal := fmt.Sprintf("%s  %s", expectedSha256, baseAssetPath)
-		err = os.WriteFile(checksumFileForOriginalAsset, []byte(checksumContentForOriginal), 0o644)
+		err = os.WriteFile(checksumFilePath, []byte(checksumContentForOriginal), 0o644)
 		if err != nil {
 			t.Fatalf("Failed to write checksum file for original asset: %v", err)
 		}
 
-		valid, algoUsed, err := VerifyChecksum(mismatchAssetPath, checksumFileForOriginalAsset, "")
+		// We are trying to verify mismatchAssetPathOnDisk
+		// but the checksum file (checksumFilePath) lists baseAssetPath
+		// So, for ParseChecksumFile to fail to find 'mismatch_asset.dat',
+		// assetNameInChecksumFile should be filepath.Base(mismatchAssetPathOnDisk)
+		valid, algoUsed, err := VerifyChecksum(
+			mismatchAssetPathOnDisk, // 1. Asset to hash
+			filepath.Base(
+				mismatchAssetPathOnDisk,
+			), // 2. Name to look for in checksum file ("mismatch_asset.dat")
+			checksumFilePath, // 3. Path to checksum file (which lists 'baseAssetPath', not 'mismatch_asset.dat')
+			"",               // 4. Default algo
+		)
 
 		if err == nil {
 			t.Errorf("VerifyChecksum() error = nil, want an error")
 		} else {
+			// Expecting "checksum for target 'mismatch_asset.dat' not found..."
 			if !strings.Contains(err.Error(), "not found in checksum file") {
 				t.Errorf("VerifyChecksum() error = %v, want error containing 'not found in checksum file'", err)
 			}
@@ -237,24 +259,25 @@ func TestVerifyChecksum(t *testing.T) {
 		if valid {
 			t.Errorf("VerifyChecksum() valid = %v, want false", valid)
 		}
+		// algoUsed should be "sha256" as derived from checksumFilePath, even if parsing failed later
 		if algoUsed != "sha256" {
 			t.Errorf("VerifyChecksum() algoUsed = %s, want 'sha256'", algoUsed)
 		}
 	})
 
 	t.Run("target checksum not in file", func(t *testing.T) {
-		// Define and create nonMatchingChecksumFile for this subtest
-		nonMatchingChecksumFile := filepath.Join(tempDir, "non_matching_checksums.txt")
-		content := "unrelatedchecksum  unrelatedfile.zip"                         // Note: no newline might be an issue for some parsers.
-		err := os.WriteFile(nonMatchingChecksumFile, []byte(content+"\n"), 0o644) // Added newline
+		checksumFilePath := filepath.Join(tempDir, "non_matching_checksums.txt")
+		content := "unrelatedchecksum  unrelatedfile.zip\n"
+		err := os.WriteFile(checksumFilePath, []byte(content), 0o644)
 		if err != nil {
 			t.Fatalf("Failed to write non-matching checksum file: %v", err)
 		}
 
 		valid, algoUsed, err := VerifyChecksum(
-			assetPath,
-			nonMatchingChecksumFile,
-			DefaultAlgorithmForGenericChecksums,
+			assetPathOnDisk,                     // 1. Asset to hash
+			baseAssetPath,                       // 2. Name to look for (won't be in nonMatchingChecksumFile)
+			checksumFilePath,                    // 3. Path to the checksum file
+			DefaultAlgorithmForGenericChecksums, // 4.
 		)
 
 		if err == nil {
@@ -277,40 +300,28 @@ func TestVerifyChecksum(t *testing.T) {
 	})
 
 	t.Run("unsupported algorithm from filename", func(t *testing.T) {
-		// Define and create unsupportedAlgoChecksumFileName for this subtest
-		unsupportedAlgoChecksumFileName := filepath.Join(tempDir, baseAssetPath+".unsupported")
-		content := fmt.Sprintf("checksum  %s\n", baseAssetPath) // Added newline
-		err := os.WriteFile(unsupportedAlgoChecksumFileName, []byte(content), 0o644)
+		checksumFilePath := filepath.Join(tempDir, baseAssetPath+".unsupported")
+		content := fmt.Sprintf("checksum  %s\n", baseAssetPath)
+		err := os.WriteFile(checksumFilePath, []byte(content), 0o644)
 		if err != nil {
 			t.Fatalf("Failed to write unsupported algo checksum file: %v", err)
 		}
 
-		// Declare and initialize originalAlgoExts properly
-		// This assumes 'algorithmExts' is a package-level variable.
-		originalAlgoExts := make(map[string]bool)
-		for k, v := range algorithmExts { // Make a copy
-			originalAlgoExts[k] = v
-		}
-
-		// Modify a copy for the test, then restore
-		// (or if algorithmExts is only used by GetAlgorithmFromFilename, pass a modified map to it)
+		savedAlgorithmExts := algorithmExts
 		tempModifiedExts := make(map[string]bool)
-		for k, v := range algorithmExts {
+		for k, v := range savedAlgorithmExts {
 			tempModifiedExts[k] = v
 		}
 		tempModifiedExts[".unsupported"] = true
+		algorithmExts = tempModifiedExts
+		defer func() { algorithmExts = savedAlgorithmExts }()
 
-		// This modification relies on GetAlgorithmFromFilename using the global `algorithmExts`.
-		// If GetAlgorithmFromFilename were to take `algorithmExts` as a parameter, that would be cleaner for testing.
-		// For now, we modify the global and defer its restoration.
-		savedAlgorithmExts := algorithmExts // Save the original map reference
-		algorithmExts = tempModifiedExts    // Point global to our temporary map
-
-		defer func() {
-			algorithmExts = savedAlgorithmExts // Restore original global map
-		}()
-
-		valid, algoUsed, err := VerifyChecksum(assetPath, unsupportedAlgoChecksumFileName, "")
+		valid, algoUsed, err := VerifyChecksum(
+			assetPathOnDisk,  // 1.
+			baseAssetPath,    // 2.
+			checksumFilePath, // 3.
+			"",               // 4. (empty because algo should be derived from ext)
+		)
 
 		if err == nil {
 			t.Errorf("VerifyChecksum() error = nil, want an error for 'unsupported algorithm'")

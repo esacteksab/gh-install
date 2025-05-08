@@ -221,7 +221,7 @@ func ParseChecksumFile(checksumFilePath, targetFilename string) (string, error) 
 
 		parts := strings.Fields(line)
 		if len(parts) < 2 { //nolint:mnd
-			Logger.Printf("DEBUG: Skipping malformed line in checksum file: %s", line)
+			Logger.Debugf("skipping malformed line in checksum file: %s", line)
 			continue
 		}
 
@@ -237,8 +237,8 @@ func ParseChecksumFile(checksumFilePath, targetFilename string) (string, error) 
 		filenameInChecksum = strings.TrimPrefix(filenameInChecksum, "./")
 
 		if filenameInChecksum == targetFilename {
-			Logger.Printf(
-				"DEBUG: Found expected checksum '%s' for target '%s' in checksum file '%s'",
+			Logger.Debug(
+				"found expected checksum '%s' for target '%s' in checksum file '%s'",
 				checksum,
 				targetFilename,
 				checksumFilePath,
@@ -262,19 +262,27 @@ const (
 	// DefaultAlgorithmForGenericChecksums is the algorithm assumed for generic checksum files
 	// like "checksums.txt" when the algorithm cannot be derived from the filename.
 	// GoReleaser uses SHA256 for its generic `_checksums.txt` file.
-	DefaultAlgorithmForGenericChecksums = "sha256"
+	DefaultAlgorithmForGenericChecksums             = "sha256"
+	S_IXUSR                             os.FileMode = 0o100 // Execute by owner
+	S_IXGRP                             os.FileMode = 0o010 // Execute by group
+	S_IXOTH                             os.FileMode = 0o001 // Execute by others
 )
 
 // VerifyChecksum verifies a local asset against a checksum file.
 // It attempts to determine the algorithm from the checksum file's name.
 // If the checksum file has a generic name (e.g., "project_version_checksums.txt"),
 // it uses `defaultAlgoForGeneric` (which should typically be "sha256" for GoReleaser).
+// In utils/checksum.go or utils/hash.go
+// func VerifyChecksum(assetPathOnDisk string, assetNameInChecksumFile string, checksumFilePath string, defaultAlgoForGeneric string) (bool, string, error)
+// assetPathOnDisk: The full path to the file on the local disk whose checksum needs to be calculated.
+// assetNameInChecksumFile: The name of the asset as it appears in the checksum file.
 func VerifyChecksum(
-	assetPath string,
+	assetPathOnDisk string,
+	assetNameInChecksumFile string,
 	checksumFilePath string,
 	defaultAlgoForGeneric string,
 ) (bool, string, error) {
-	var determinedAlgorithm string // Renamed for clarity from algorithmToUse
+	var determinedAlgorithm string
 
 	algoFromExt, found := GetAlgorithmFromFilename(checksumFilePath)
 	if found {
@@ -286,8 +294,6 @@ func VerifyChecksum(
 		)
 	} else {
 		if defaultAlgoForGeneric == "" {
-			// No algorithm could be determined.
-			// It makes sense to return "" for the algorithm here as none was selected.
 			return false, "", fmt.Errorf(
 				"checksum algorithm not found in checksum file name '%s' and no default algorithm provided for generic checksum files",
 				checksumFilePath,
@@ -297,9 +303,6 @@ func VerifyChecksum(
 		Logger.Printf("INFO: Checksum file '%s' has no algorithm extension. Using default/hint: '%s'", checksumFilePath, determinedAlgorithm)
 	}
 
-	// At this point, `determinedAlgorithm` has the algorithm we intend to use or have derived.
-	// All subsequent errors should return this `determinedAlgorithm`.
-
 	if _, err := GetHasher(determinedAlgorithm); err != nil {
 		return false, determinedAlgorithm, fmt.Errorf(
 			"determined algorithm '%s' is not supported: %w",
@@ -308,46 +311,122 @@ func VerifyChecksum(
 		)
 	}
 
-	targetBaseFilename := filepath.Base(assetPath)
-	expectedChecksum, err := ParseChecksumFile(checksumFilePath, targetBaseFilename)
+	// Use assetNameInChecksumFile for parsing the checksum file
+	expectedChecksum, err := ParseChecksumFile(checksumFilePath, assetNameInChecksumFile)
 	if err != nil {
 		return false, determinedAlgorithm, fmt.Errorf(
 			"failed to parse checksum file '%s' for target '%s': %w",
 			checksumFilePath,
-			targetBaseFilename,
+			assetNameInChecksumFile,
 			err,
 		)
 	}
 
+	// Use assetPathOnDisk to calculate the hash of the actual local file
 	Logger.Printf(
 		"INFO: Calculating %s checksum for local asset: %s",
 		strings.ToUpper(determinedAlgorithm),
-		assetPath,
+		assetPathOnDisk,
 	)
-	actualChecksum, err := HashFile(assetPath, determinedAlgorithm)
+	actualChecksum, err := HashFile(assetPathOnDisk, determinedAlgorithm) // THIS IS THE KEY CHANGE
 	if err != nil {
+		// This error message should use assetPathOnDisk
 		return false, determinedAlgorithm, fmt.Errorf(
 			"failed to calculate actual checksum for asset '%s' using %s: %w",
-			assetPath,
+			assetPathOnDisk,
 			determinedAlgorithm,
 			err,
 		)
 	}
 
 	if strings.EqualFold(expectedChecksum, actualChecksum) {
-		Logger.Printf("SUCCESS: Checksum VALID for '%s'. Expected: %s, Actual: %s (Algorithm: %s)",
-			assetPath, expectedChecksum, actualChecksum, determinedAlgorithm)
+		Logger.Printf(
+			"SUCCESS: Checksum VALID for '%s' (original name: '%s'). Expected: %s, Actual: %s (Algorithm: %s)",
+			assetPathOnDisk,
+			assetNameInChecksumFile,
+			expectedChecksum,
+			actualChecksum,
+			determinedAlgorithm,
+		)
 		return true, determinedAlgorithm, nil
 	}
 
-	Logger.Printf("ERROR: Checksum INVALID for '%s'. Expected: %s, Got: %s (Algorithm: %s)",
-		assetPath, expectedChecksum, actualChecksum, determinedAlgorithm)
+	Logger.Errorf(
+		"ERROR: Checksum INVALID for '%s' (original name: '%s'). Expected: %s, Got: %s (Algorithm: %s)",
+		assetPathOnDisk,
+		assetNameInChecksumFile,
+		expectedChecksum,
+		actualChecksum,
+		determinedAlgorithm,
+	)
 	return false, determinedAlgorithm, fmt.Errorf(
-		"checksum mismatch for '%s': expected '%s', got '%s'",
-		assetPath,
+		"checksum mismatch for asset '%s' (original name '%s'): expected '%s', got '%s'",
+		assetPathOnDisk,
+		assetNameInChecksumFile,
 		expectedChecksum,
 		actualChecksum,
 	)
+}
+
+func ChmodFile(filePath string) {
+	fileInfo, err := os.Stat(filePath)
+	if err != nil {
+		log.Fatalf("Failed to get file info for '%s': %v", filePath, err)
+	}
+
+	// 2. Get the current permission mode
+	currentMode := fileInfo.Mode()
+	Logger.Debugf(
+		"Original permissions for '%s': %s (octal: %04o)\n",
+		filePath,
+		currentMode.String(),
+		currentMode.Perm(),
+	)
+
+	// 3. Calculate new permissions by ORing with execute bits
+	// We want to add S_IXUSR, S_IXGRP, and S_IXOTH
+	// This is equivalent to `currentMode.Perm() | 0111`
+	// The .Perm() method on os.FileMode gives you just the permission bits (last 9 bits)
+	newMode := currentMode.Perm() | S_IXUSR | S_IXGRP | S_IXOTH
+	// Alternatively, if currentMode already contains other mode bits (like os.ModeDir),
+	// you'd want to preserve those and only modify the permission part:
+	// newModeWithOtherBits := currentMode | S_IXUSR | S_IXGRP | S_IXOTH
+	// However, os.Chmod only cares about the permission bits, so using currentMode.Perm() is safer.
+
+	Logger.Debugf("Calculated new mode (permission part only) before Chmod: %04o\n", newMode)
+
+	// 4. Apply the new permissions
+	// os.Chmod expects an os.FileMode, which includes more than just permission bits.
+	// However, it effectively only uses the permission bits part.
+	// So, newMode (which is just permission bits) is fine here.
+	err = os.Chmod(filePath, newMode)
+	if err != nil {
+		Logger.Fatalf("Failed to chmod file '%s': %v", filePath, err)
+	}
+
+	// 5. Verify new permissions (optional)
+	fileInfoAfter, err := os.Stat(filePath)
+	if err != nil {
+		Logger.Fatalf("Failed to get file info after chmod for '%s': %v", filePath, err)
+	}
+	modeAfterChmod := fileInfoAfter.Mode()
+	Logger.Debugf(
+		"New permissions for '%s': %s (octal: %04o)\n",
+		filePath,
+		modeAfterChmod.String(),
+		modeAfterChmod.Perm(),
+	)
+
+	// Check if execute bits are set
+	if modeAfterChmod&S_IXUSR != 0 {
+		Logger.Debug("Execute permission for User is SET.")
+	}
+	if modeAfterChmod&S_IXGRP != 0 {
+		Logger.Debug("Execute permission for Group is SET.")
+	}
+	if modeAfterChmod&S_IXOTH != 0 {
+		Logger.Debug("Execute permission for Other is SET.")
+	}
 }
 
 func resetOsArchRegexesForTesting() {
