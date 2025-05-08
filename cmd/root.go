@@ -26,6 +26,7 @@ import (
 var (
 	binNameFlag string // binNameFlag is the value from the --binName flag
 	pathFlag    string // pathFlag is the value from the --path flag
+	shaFlag     string // shaFlag is the value from the --sha flag
 	Version     string // Application version
 	Date        string // Build date
 	Commit      string // Git commit hash
@@ -54,9 +55,25 @@ func init() {
 
 	// Path to save binary
 	rootCmd.PersistentFlags().
-		StringVarP(&pathFlag, "path", "p", "", "directory location to save binary")
+		StringVarP(&pathFlag,
+			"path",
+			"p",
+			"",
+			"directory location to save binary")
 	// Binary Name
-	rootCmd.PersistentFlags().StringVarP(&binNameFlag, "binName", "b", "", "name to save binary as")
+	rootCmd.PersistentFlags().StringVarP(
+		&binNameFlag,
+		"binName",
+		"b",
+		"",
+		"name to save binary as")
+	rootCmd.PersistentFlags().
+		StringVarP(
+			&shaFlag,
+			"sha",
+			"s",
+			"",
+			"sha algorithm to use for checksum verification")
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
@@ -523,18 +540,23 @@ func verifyAssetChecksum(mainAssetDiskPath, mainAssetOriginalName, checksumAsset
 		)
 	}
 
-	isValid, algo, err := utils.VerifyChecksum(
-		mainAssetDiskPath,
-		checksumAssetPath,
-		utils.DefaultAlgorithmForGenericChecksums,
-	)
-	if err != nil {
-		utils.Logger.Fatalf("Verification error: %v (Algorithm attempted: %s)", err, algo)
-	}
-	if isValid {
-		utils.Logger.Debugf("File '%s' is valid using %s!", mainAssetDiskPath, algo)
+	var algo string
+	if shaFlag != "" {
+		algo = shaFlag
 	} else {
-		utils.Logger.Debugf("File '%s' IS INVALID using %s!", mainAssetDiskPath, algo) // This branch means checksums didn't match
+		isValid, algo, err := utils.VerifyChecksum(
+			mainAssetDiskPath,
+			checksumAssetPath,
+			utils.DefaultAlgorithmForGenericChecksums,
+		)
+		if err != nil {
+			utils.Logger.Fatalf("Verification error: %v (Algorithm attempted: %s)", err, algo)
+		}
+		if isValid {
+			utils.Logger.Debugf("File '%s' is valid using %s!", mainAssetDiskPath, algo)
+		} else {
+			utils.Logger.Debugf("File '%s' IS INVALID using %s!", mainAssetDiskPath, algo) // This branch means checksums didn't match
+		}
 	}
 
 	actualChecksum, err := utils.HashFile(mainAssetDiskPath, algo)
