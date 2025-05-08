@@ -128,16 +128,16 @@ install the appropriate binary. Includes checksum verification if available.`,
 		var releaseTag string
 
 		if pa.Version == "latest" || pa.Version == "" {
-			utils.Logger.Infof("Fetching assets for latest release of %s/%s", pa.Owner, pa.Repo)
+			utils.Logger.Printf("Fetching assets for latest release of %s/%s", pa.Owner, pa.Repo)
 			release, err := getLatestRelease(ctx, client, pa.Owner, pa.Repo)
 			if err != nil {
 				return fmt.Errorf("could not get latest release: %w", err)
 			}
 			assets = release.Assets
 			releaseTag = release.GetTagName()
-			utils.Logger.Infof("Latest release tag: %s", releaseTag)
+			utils.Logger.Printf("Latest release tag: %s", releaseTag)
 		} else {
-			utils.Logger.Infof("Fetching assets for release tag '%s' of %s/%s", pa.Version, pa.Owner, pa.Repo)
+			utils.Logger.Printf("Fetching assets for release tag '%s' of %s/%s", pa.Version, pa.Owner, pa.Repo)
 			release, err := getTaggedRelease(ctx, client, pa.Owner, pa.Repo, pa.Version)
 			if err != nil {
 				return fmt.Errorf("could not get release for tag '%s': %w", pa.Version, err)
@@ -162,10 +162,12 @@ install the appropriate binary. Includes checksum verification if available.`,
 			return err
 		}
 
-		utils.Logger.Infof("Successfully downloaded and verified: %s", downloadedAsset.Name)
-		utils.Logger.Infof("Asset saved to: %s", downloadedAsset.Path)
+		utils.Logger.Debugf("Successfully downloaded and verified: %s", downloadedAsset.Name)
+		utils.Logger.Debugf("Asset saved to: %s", downloadedAsset.Path)
 		utils.Logger.Debugf("Asset MIME Type: %s", downloadedAsset.MIMEType)
-		utils.Logger.Info(">>> Next steps (unpacking, installation) are not yet implemented. <<<")
+		utils.Logger.Debugf("chmod'ing %s", downloadedAsset.Name)
+		utils.ChmodFile(downloadedAsset.Path)
+		utils.Logger.Debug(">>> Next steps (unpacking, installation) are not yet implemented. <<<")
 		return nil
 	},
 }
@@ -351,8 +353,10 @@ func saveAssetToFile(rc io.ReadCloser, localPath, displayName string, assetSize 
 		utils.Logger.Errorf("Error closing file '%s' after download: %v", localPath, closeErr)
 		// Do not return error here if copy was successful, but log it.
 	}
-
-	utils.Logger.Printf(green("✔")+" Successfully downloaded %s to %s", displayName, localPath)
+	if !utils.IsChecksumFile(localPath) {
+		utils.Logger.Debugf(green("✔")+" Successfully downloaded %s to %s", displayName, localPath)
+		utils.Logger.Print(green("✔") + " Successfully downloaded")
+	}
 	return nil
 }
 
@@ -407,9 +411,9 @@ func findDownloadAndVerifyAsset( //nolint:gocyclo,funlen
 		return Asset{}, errors.New("no suitable asset found for download")
 	}
 
-	utils.Logger.Infof("Selected main asset for download: %s", *mainAssetToDownload.Name)
+	utils.Logger.Debugf("Selected main asset for download: %s", *mainAssetToDownload.Name)
 	if checksumAssetToDownload != nil {
-		utils.Logger.Infof("Selected checksum file: %s", *checksumAssetToDownload.Name)
+		utils.Logger.Debugf("Selected checksum file: %s", *checksumAssetToDownload.Name)
 	} else {
 		utils.Logger.Warn(yellow("No checksum file found. Proceeding without verification."))
 	}
@@ -514,12 +518,13 @@ func findDownloadAndVerifyAsset( //nolint:gocyclo,funlen
 		} else {
 			// Pass the actual path of the (potentially renamed/relocated) main asset
 			// and its original name for checksum lookup
-			verifyErr := verifyAssetChecksum(downloadedMainAssetActualPath, *mainAssetToDownload.Name, actualChecksumAssetPath)
+			verifyErr := verifyAssetChecksum(downloadedMainAssetActualPath, *mainAssetToDownload.Name, actualChecksumAssetPath, shaFlag)
 			if verifyErr != nil {
 				// Verification failed. verifyAssetChecksum handles cleanup of downloadedMainAssetActualPath.
 				return Asset{}, verifyErr // verifyErr already contains context
 			}
 			// Verification successful, checksum file (actualChecksumAssetPath) removed by verifyAssetChecksum.
+			_ = os.Remove(actualChecksumAssetPath)
 		}
 	}
 
@@ -530,78 +535,85 @@ func findDownloadAndVerifyAsset( //nolint:gocyclo,funlen
 	}, nil
 }
 
-func verifyAssetChecksum(mainAssetDiskPath, mainAssetOriginalName, checksumAssetPath string) error {
-	utils.Logger.Info("Verifying checksum...")
+func verifyAssetChecksum(
+	mainAssetDiskPath, mainAssetOriginalName, checksumAssetPath, shaFlag string,
+) error {
+	utils.Logger.Debug("Verifying checksum...")
+	var algoToUse string
+	var expectedChecksum string
+	var err error
 
-	expectedChecksum, err := utils.ParseChecksumFile(checksumAssetPath, mainAssetOriginalName)
-	if err != nil {
-		utils.Logger.Errorf(
-			"Failed to find/parse checksum for '%s' in '%s': %v",
-			mainAssetOriginalName, checksumAssetPath, err,
-		)
-		_ = os.Remove(mainAssetDiskPath)
-		_ = os.Remove(checksumAssetPath)
-		return fmt.Errorf(
-			"checksum verification failed for '%s': could not find entry in checksum file '%s'",
-			mainAssetOriginalName, filepath.Base(checksumAssetPath),
-		)
-	}
-
-	var algo string
 	if shaFlag != "" {
-		algo = shaFlag
-	} else {
-		isValid, algo, err := utils.VerifyChecksum(
-			mainAssetDiskPath,
-			checksumAssetPath,
-			utils.DefaultAlgorithmForGenericChecksums,
-		)
+		// User specified an algorithm
+		algoToUse = shaFlag
+		utils.Logger.Debugf("Using specified algorithm '%s' from --sha flag.", algoToUse)
+		expectedChecksum, err = utils.ParseChecksumFile(checksumAssetPath, mainAssetOriginalName)
 		if err != nil {
-			utils.Logger.Fatalf("Verification error: %v (Algorithm attempted: %s)", err, algo)
+			return fmt.Errorf(
+				"failed to parse checksum file '%s' for target '%s' (using --sha=%s): %w",
+				checksumAssetPath,
+				mainAssetOriginalName,
+				shaFlag,
+				err,
+			)
 		}
-		if isValid {
-			utils.Logger.Debugf("File '%s' is valid using %s!", mainAssetDiskPath, algo)
+	} else {
+		// Determine algorithm and get expected checksum via VerifyChecksum's parsing logic
+		// We call VerifyChecksum primarily to determine the algorithm and get the expected sum.
+		// The actual hashing and comparison will be done once outside this if/else.
+
+		// Temporarily, let's just determine the algorithm first
+		var determinedAlgoFromExtOrGeneric string
+		algoFromExt, found := utils.GetAlgorithmFromFilename(checksumAssetPath)
+		if found {
+			determinedAlgoFromExtOrGeneric = algoFromExt
+			utils.Logger.Debugf("Using algorithm '%s' derived from checksum file extension: %s", determinedAlgoFromExtOrGeneric, checksumAssetPath)
 		} else {
-			utils.Logger.Debugf("File '%s' IS INVALID using %s!", mainAssetDiskPath, algo) // This branch means checksums didn't match
+			determinedAlgoFromExtOrGeneric = utils.DefaultAlgorithmForGenericChecksums
+			utils.Logger.Debugf("Checksum file '%s' has no algorithm extension. Using default/hint: '%s'", checksumAssetPath, determinedAlgoFromExtOrGeneric)
+		}
+
+		// Ensure determined algo is supported
+		if _, err := utils.GetHasher(determinedAlgoFromExtOrGeneric); err != nil {
+			return fmt.Errorf("algorithm '%s' (derived or default) is not supported: %w", determinedAlgoFromExtOrGeneric, err)
+		}
+		algoToUse = determinedAlgoFromExtOrGeneric
+
+		expectedChecksum, err = utils.ParseChecksumFile(checksumAssetPath, mainAssetOriginalName)
+		if err != nil {
+			return fmt.Errorf("failed to parse checksum file '%s' for target '%s' (algorithm hint: %s): %w",
+				checksumAssetPath, mainAssetOriginalName, algoToUse, err)
 		}
 	}
 
-	actualChecksum, err := utils.HashFile(mainAssetDiskPath, algo)
+	utils.Logger.Debugf(
+		"Calculating %s checksum for local asset: %s",
+		strings.ToUpper(algoToUse),
+		mainAssetDiskPath,
+	)
+	actualChecksum, err := utils.HashFile(mainAssetDiskPath, algoToUse)
 	if err != nil {
-		utils.Logger.Errorf(
-			"Failed to calculate checksum for downloaded file '%s' (original name '%s'): %v",
-			mainAssetDiskPath, mainAssetOriginalName, err,
-		)
-		_ = os.Remove(mainAssetDiskPath)
-		_ = os.Remove(checksumAssetPath)
-		return fmt.Errorf(
-			"checksum verification failed: could not hash downloaded file '%s' (original: %s)",
-			mainAssetDiskPath, mainAssetOriginalName,
-		)
+		return fmt.Errorf("failed to calculate actual checksum for asset '%s' using %s: %w",
+			mainAssetDiskPath, algoToUse, err)
 	}
 
 	if !strings.EqualFold(expectedChecksum, actualChecksum) {
-		utils.Logger.Errorf(
-			"CHECKSUM MISMATCH for %s (file: %s)!",
-			mainAssetOriginalName,
+		return fmt.Errorf(
+			"checksum mismatch for asset '%s' (original name '%s') using algorithm '%s': expected '%s', got '%s'",
 			mainAssetDiskPath,
+			mainAssetOriginalName,
+			algoToUse,
+			expectedChecksum,
+			actualChecksum,
 		)
-		utils.Logger.Errorf("  Expected: %s", expectedChecksum)
-		utils.Logger.Errorf("  Actual:   %s", actualChecksum)
-		_ = os.Remove(mainAssetDiskPath)
-		_ = os.Remove(checksumAssetPath)
-		return errors.New(red("checksum mismatch - downloaded file is corrupt or incorrect"))
 	}
 
-	utils.Logger.Print(green("✔") + " Checksum verified successfully.")
-	err = os.Remove(checksumAssetPath)
-	if err != nil {
-		utils.Logger.Warnf(
-			"Could not remove checksum file '%s' after verification: %v",
-			checksumAssetPath, err,
-		)
-	} else {
-		utils.Logger.Debugf("Removed checksum file: %s", checksumAssetPath)
-	}
+	utils.Logger.Debugf(
+		green("✔")+" Checksum VALID for '%s' (original name: '%s') using algorithm %s.",
+		mainAssetDiskPath,
+		mainAssetOriginalName,
+		algoToUse,
+	)
+	utils.Logger.Print(green("✔") + " Checksum verified!")
 	return nil
 }

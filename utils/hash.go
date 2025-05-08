@@ -120,8 +120,8 @@ func HashFile(assetPath, algorithm string) (string, error) {
 	}
 
 	checksum := hex.EncodeToString(hasher.Sum(nil))
-	Logger.Infof(
-		"DEBUG: %s checksum for '%s': %s",
+	Logger.Debugf(
+		"%s checksum for '%s': %s",
 		strings.ToUpper(algorithm),
 		safeFile,
 		checksum,
