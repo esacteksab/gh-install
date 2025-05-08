@@ -66,7 +66,7 @@ func init() {
 			"path",
 			"p",
 			"",
-			"directory location to save binary")
+			"directory location to save binary. Default: $XDG_BIN_HOME")
 	// Binary Name
 	rootCmd.PersistentFlags().StringVarP(
 		&binNameFlag,
