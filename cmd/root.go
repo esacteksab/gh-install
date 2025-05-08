@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -523,7 +524,21 @@ func verifyAssetChecksum(mainAssetDiskPath, mainAssetOriginalName, checksumAsset
 		)
 	}
 
-	actualChecksum, err := utils.HashFile(mainAssetDiskPath)
+	isValid, algo, err := utils.VerifyChecksum(
+		mainAssetDiskPath,
+		checksumAssetPath,
+		utils.DefaultAlgorithmForGenericChecksums,
+	)
+	if err != nil {
+		log.Fatalf("Verification error: %v (Algorithm attempted: %s)", err, algo)
+	}
+	if isValid {
+		log.Printf("File '%s' is valid using %s!", mainAssetDiskPath, algo)
+	} else {
+		log.Printf("File '%s' IS INVALID using %s!", mainAssetDiskPath, algo) // This branch means checksums didn't match
+	}
+
+	actualChecksum, err := utils.HashFile(mainAssetDiskPath, algo)
 	if err != nil {
 		utils.Logger.Errorf(
 			"Failed to calculate checksum for downloaded file '%s' (original name '%s'): %v",

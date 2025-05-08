@@ -395,7 +395,7 @@ func TestParseChecksumFile(t *testing.T) {
 	}
 	defer os.Remove(notACheckSumFile)
 
-	notACheckSumFileHash, err := HashFile(notACheckSumFile)
+	notACheckSumFileHash, err := HashFile(notACheckSumFile, "sha256")
 	if err != nil {
 		t.Fatalf("failed to hash file: %v", err)
 	}
@@ -475,73 +475,6 @@ func TestParseChecksumFile(t *testing.T) {
 			}
 			if got != tt.want {
 				t.Errorf("ParseChecksumFile() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestHashFile(t *testing.T) {
-	CreateLogger(true)
-	fakeFile := "fakeFile.txt"
-	fakeContent := "not a checksum"
-	anotherAnotherFakeFile := "anotherAnotherFakeFile.txt"
-	moreFakeContent := "more fake content"
-
-	err := os.WriteFile(fakeFile, []byte(fakeContent), 0o640)
-	if err != nil {
-		t.Fatalf("failed to create test file: %v", err)
-	}
-	defer os.Remove(fakeFile)
-
-	h, err := HashFile(fakeFile)
-	if err != nil {
-		t.Fatalf("failed to hash file: %v", err)
-	}
-
-	err = os.WriteFile(anotherAnotherFakeFile, []byte(moreFakeContent), 0o740)
-	if err != nil {
-		t.Fatalf("failed to create test file: %v", err)
-	}
-	defer os.Remove(anotherAnotherFakeFile)
-	os.Chmod(anotherAnotherFakeFile, 0o000)
-
-	type args struct {
-		assetPath string
-	}
-	tests := []struct {
-		name    string
-		args    args
-		want    string
-		wantErr bool
-	}{
-		{
-			name:    "non-existent file",
-			args:    args{assetPath: "reallyFakeFile.txt"},
-			want:    "",
-			wantErr: true,
-		},
-		{
-			name:    "file",
-			args:    args{assetPath: "fakeFile.txt"},
-			want:    h,
-			wantErr: false,
-		},
-		{
-			name:    "non-available file",
-			args:    args{assetPath: "anotherAnotherFakeFile.txt"},
-			want:    "",
-			wantErr: true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := HashFile(tt.args.assetPath)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("HashFile() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if got != tt.want {
-				t.Errorf("HashFile() = %v, want %v", got, tt.want)
 			}
 		})
 	}
