@@ -53,6 +53,13 @@ func init() {
 	rootCmd.Version = utils.BuildVersion(Version, Commit, Date, BuiltBy)
 	rootCmd.SetVersionTemplate(`{{printf "Version %s" .Version}}`)
 
+	supportedAlgos := utils.ListSupportedAlgorithms()
+	algoListString := strings.Join(supportedAlgos, ", ")
+	usageMessage := fmt.Sprintf(
+		"SHA algorithm to use for checksum verification. Valid algorithms are: %s.",
+		algoListString,
+	)
+
 	// Path to save binary
 	rootCmd.PersistentFlags().
 		StringVarP(&pathFlag,
@@ -73,7 +80,7 @@ func init() {
 			"sha",
 			"s",
 			"",
-			"sha algorithm to use for checksum verification")
+			usageMessage)
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
