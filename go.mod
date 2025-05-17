@@ -1,11 +1,11 @@
 module github.com/esacteksab/gh-install
 
-go 1.24.2
+go 1.24.3
 
 require (
 	github.com/charmbracelet/lipgloss v1.1.0
-	github.com/charmbracelet/log v0.4.1
-	github.com/esacteksab/httpcache v0.1.0
+	github.com/charmbracelet/log v0.4.2
+	github.com/esacteksab/httpcache v0.1.1
 	github.com/google/go-github/v71 v71.0.1-0.20250418200928-5b75aa86dba5
 	github.com/knadh/koanf/parsers/toml/v2 v2.2.0
 	github.com/knadh/koanf/providers/file v1.2.0
