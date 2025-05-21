@@ -399,9 +399,28 @@ func findDownloadAndVerifyAsset( //nolint:gocyclo,funlen
 		if utils.MatchFile(assetName) {
 			if mainAssetToDownload == nil {
 				utils.Logger.Debugf("Found potential main asset: %s", assetName)
-				mainAssetToDownload = asset
+
+				ext := filepath.Ext(assetName)
+				if ext != "" {
+					// This is a file with an extension (like .deb, .rpm, .apk)
+					osExt := utils.DetectOS()
+					utils.Logger.Debugf("Operating System Family: %s", osExt)
+
+					if strings.Contains(assetName, osExt) {
+						// If this matches our OS package type, use it
+						mainAssetToDownload = asset
+					}
+					// If not a matching package, fall through to default assignment below
+				}
+
+				// If we haven't set an asset yet (either no extension or not matching our OS),
+				// use this one since it matched the OS/arch pattern
+				if mainAssetToDownload == nil {
+					mainAssetToDownload = asset
+				}
 			} else {
-				utils.Logger.Warnf("Found multiple matching assets. Using '%s', ignoring '%s'.", *mainAssetToDownload.Name, assetName)
+				utils.Logger.Warnf("Found multiple matching assets. Using '%s', ignoring '%s'.",
+					*mainAssetToDownload.Name, assetName)
 			}
 		}
 	}
