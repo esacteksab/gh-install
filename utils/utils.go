@@ -237,7 +237,7 @@ func ParseChecksumFile(checksumFilePath, targetFilename string) (string, error) 
 		filenameInChecksum = strings.TrimPrefix(filenameInChecksum, "./")
 
 		if filenameInChecksum == targetFilename {
-			Logger.Debug(
+			Logger.Debugf(
 				"found expected checksum '%s' for target '%s' in checksum file '%s'",
 				checksum,
 				targetFilename,
