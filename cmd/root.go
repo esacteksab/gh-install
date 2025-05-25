@@ -135,7 +135,7 @@ install the appropriate binary. Includes checksum verification if available.`,
 				return fmt.Errorf("could not get latest release: %w", err)
 			}
 			assets = release.Assets
-			utils.Logger.Debugf("Release Assets: %s", assets)
+			// utils.Logger.Debugf("Release Assets: %s", assets)
 			releaseTag = release.GetTagName()
 			utils.Logger.Printf("Latest release tag: %s", releaseTag)
 		} else {
@@ -413,28 +413,36 @@ func findDownloadAndVerifyAsset( //nolint:gocyclo,funlen
 			continue
 		}
 		if utils.MatchFile(assetName) {
-			if mainAssetToDownload == nil {
-				utils.Logger.Debugf("Found potential main asset: %s", assetName)
+			utils.Logger.Debugf("Found potential main asset: %s", assetName)
 
-				ext := filepath.Ext(assetName)
-				if ext != "" {
-					// This is a file with an extension (like .deb, .rpm, .apk)
-					osExt := utils.DetectOS()
-					utils.Logger.Debugf("Operating System Family: %s", osExt)
+			ext := filepath.Ext(assetName)
+			osExt := utils.DetectOS()
+			if ext != "" {
+				// This is a file with an extension (like .deb, .rpm, .apk)
 
-					if strings.Contains(assetName, osExt) {
-						// If this matches our OS package type, use it
-						mainAssetToDownload = asset
+				utils.Logger.Debugf("Operating System Family: %s", osExt)
+
+				if strings.Contains(assetName, osExt) {
+					// This matches our OS package type - prefer this over any previous selection
+					if mainAssetToDownload != nil {
+						utils.Logger.Debugf("Replacing '%s' with OS-matching asset '%s'",
+							*mainAssetToDownload.Name, assetName)
 					}
-					// If not a matching package, fall through to default assignment below
-				}
-
-				// If we haven't set an asset yet (either no extension or not matching our OS),
-				// use this one since it matched the OS/arch pattern
-				if mainAssetToDownload == nil {
 					mainAssetToDownload = asset
+					continue // Keep this as our preferred choice but continue scanning
 				}
+			}
+
+			// If we haven't found an OS-matching package yet, use this as fallback
+			if mainAssetToDownload == nil {
+				mainAssetToDownload = asset
+			} else if !strings.Contains(*mainAssetToDownload.Name, osExt) {
+				// Our current selection doesn't match OS, but this one might be better
+				// (though it also doesn't match OS if we get here)
+				utils.Logger.Warnf("Found multiple non-OS-matching assets. Using '%s', ignoring '%s'.",
+					*mainAssetToDownload.Name, assetName)
 			} else {
+				// We already have an OS-matching asset, ignore this one
 				utils.Logger.Warnf("Found multiple matching assets. Using '%s', ignoring '%s'.",
 					*mainAssetToDownload.Name, assetName)
 			}
