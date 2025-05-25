@@ -455,12 +455,11 @@ func findDownloadAndVerifyAsset( //nolint:gocyclo,funlen
 
 	// Determine Save Path for Main Asset
 	var finalMainAssetSaveName string
+	// Check if the asset has a file extension
+	ext := utils.GetExtension(*mainAssetToDownload.Name)
 	if binNameFlag != "" { // User specified --binName
 		finalMainAssetSaveName = binNameFlag
 	} else {
-		// Check if the asset has a file extension
-		ext := utils.GetExtension(*mainAssetToDownload.Name)
-
 		if ext != "" {
 			// Has extension (like .deb, .rpm, .apk) - use full original name
 			finalMainAssetSaveName = *mainAssetToDownload.Name
@@ -496,12 +495,31 @@ func findDownloadAndVerifyAsset( //nolint:gocyclo,funlen
 			)
 		}
 	}
-	targetMainAssetSavePath := filepath.Join(targetMainAssetDir, finalMainAssetSaveName)
-	utils.Logger.Debugf(
-		"Main asset ('%s') will be saved as: %s",
-		*mainAssetToDownload.Name,
-		targetMainAssetSavePath,
-	)
+
+	var targetMainAssetSavePath string
+	// temp dir for system packages and eventually archives/compressed assets
+	td, err := os.MkdirTemp("", "")
+	if err != nil {
+		return Asset{}, fmt.Errorf("failed to create temp dir: %s", err)
+	}
+
+	if ext != "" {
+		// System package - save to temp directory with original filename
+		targetMainAssetSavePath = filepath.Join(td, finalMainAssetSaveName)
+		utils.Logger.Debugf(
+			"Main asset ('%s') will be saved to temp dir as: %s",
+			*mainAssetToDownload.Name,
+			targetMainAssetSavePath,
+		)
+	} else {
+		// Binary executable - save to target directory
+		targetMainAssetSavePath = filepath.Join(targetMainAssetDir, finalMainAssetSaveName)
+		utils.Logger.Debugf(
+			"Main asset ('%s') will be saved as: %s",
+			*mainAssetToDownload.Name,
+			targetMainAssetSavePath,
+		)
+	}
 
 	// Download Main Asset
 	downloadedMainAssetActualPath, err := downloadAndSaveAsset(
