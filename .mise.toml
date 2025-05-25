@@ -7,3 +7,6 @@
       [env._.python.venv]
         create = true
         path   = ".venv"
+
+[tools]
+pnpm = "latest"

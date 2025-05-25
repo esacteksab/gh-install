@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -134,6 +135,7 @@ install the appropriate binary. Includes checksum verification if available.`,
 				return fmt.Errorf("could not get latest release: %w", err)
 			}
 			assets = release.Assets
+			utils.Logger.Debugf("Release Assets: %s", assets)
 			releaseTag = release.GetTagName()
 			utils.Logger.Printf("Latest release tag: %s", releaseTag)
 		} else {
@@ -165,8 +167,22 @@ install the appropriate binary. Includes checksum verification if available.`,
 		utils.Logger.Debugf("Successfully downloaded and verified: %s", downloadedAsset.Name)
 		utils.Logger.Debugf("Asset saved to: %s", downloadedAsset.Path)
 		utils.Logger.Debugf("Asset MIME Type: %s", downloadedAsset.MIMEType)
-		utils.Logger.Debugf("chmod'ing %s", downloadedAsset.Name)
-		utils.ChmodFile(downloadedAsset.Path)
+		// get extension of asset (if it exists)
+		ext := utils.GetExtension(downloadedAsset.Name)
+		utils.Logger.Debugf("Asset extension: %s", ext)
+
+		exts := utils.ListSupportedSystemPackages()
+
+		// if an extension exists, its assumed to be a system package, not a
+		// binary and we don't need to chmod a system package
+		if slices.Contains(exts, ext) {
+			utils.Logger.Debugf("System Extension %s matched", ext)
+			utils.Logger.Debugf("NOT chmod'ing %s", downloadedAsset.Name)
+		} else {
+			utils.Logger.Debug("No matching system extension found")
+			utils.Logger.Debugf("chmod'ing %s", downloadedAsset.Name)
+			utils.ChmodFile(downloadedAsset.Path)
+		}
 		utils.Logger.Debug(">>> Next steps (unpacking, installation) are not yet implemented. <<<")
 		return nil
 	},

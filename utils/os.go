@@ -2,6 +2,9 @@
 package utils
 
 import (
+	"path/filepath"
+	"strings"
+
 	"github.com/shirou/gopsutil/v4/host"
 )
 
@@ -25,4 +28,15 @@ func DetectOS() (ext string) {
 		}
 	}
 	return ext
+}
+
+func GetExtension(filename string) string {
+	ext := filepath.Ext(filename)
+	return strings.TrimPrefix(ext, ".")
+}
+
+func ListSupportedSystemPackages() []string {
+	return []string{
+		"deb", "rpm", "apk",
+	}
 }
