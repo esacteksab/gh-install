@@ -458,22 +458,21 @@ func findDownloadAndVerifyAsset( //nolint:gocyclo,funlen
 	if binNameFlag != "" { // User specified --binName
 		finalMainAssetSaveName = binNameFlag
 	} else {
-		// Default name: first part of original asset name, split by '_'
-		sbn := strings.Split(*mainAssetToDownload.Name, "_")
-		finalMainAssetSaveName = sbn[0]
-		// Consider if asset name is simple like "mytool" or "mytool.exe"
-		if len(sbn) == 1 {
-			finalMainAssetSaveName = *mainAssetToDownload.Name // use full original name if no underscore
-			// If it's an archive and user didn't specify binName, keep original name to preserve extension
-			// If it's not an archive, and has an extension, e.g. mytool.exe, this is fine.
-			// This part could be refined based on whether it's an archive or raw binary.
-			// For now, if sbn[0] is the full name, use it. If it's part of a complex name, use sbn[0].
-			// A simple robust default if no binNameFlag: use the original asset name.
-			// Let's refine the default:
-			// If it's likely a raw binary (not archive, not installer usually ending in .exe, .dmg etc)
-			// then sbn[0] might be good. Otherwise, *mainAssetToDownload.Name is safer.
-			// For now, sticking to your provided logic:
-			// finalMainAssetSaveName = sbn[0]; is already set.
+		// Check if the asset has a file extension
+		ext := utils.GetExtension(*mainAssetToDownload.Name)
+
+		if ext != "" {
+			// Has extension (like .deb, .rpm, .apk) - use full original name
+			finalMainAssetSaveName = *mainAssetToDownload.Name
+			utils.Logger.Debugf("Asset has extension '%s', using full name: %s", ext, finalMainAssetSaveName)
+		} else {
+			// No extension - extract binary name (first part before underscore)
+			// goreleaser creates an asset name like binary_version_operatingSystem_arch
+			// We want just the binary name
+			sbn := strings.Split(*mainAssetToDownload.Name, "_")
+			utils.Logger.Debugf("sbn: %s", sbn)
+			finalMainAssetSaveName = sbn[0]
+			utils.Logger.Debugf("No extension found, using binary name: %s", finalMainAssetSaveName)
 		}
 	}
 
