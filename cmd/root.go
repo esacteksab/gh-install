@@ -415,11 +415,10 @@ func findDownloadAndVerifyAsset( //nolint:gocyclo,funlen
 		if utils.MatchFile(assetName) {
 			utils.Logger.Debugf("Found potential main asset: %s", assetName)
 
+			// This is a file with an extension (like .deb, .rpm, .apk)
 			ext := filepath.Ext(assetName)
 			osExt := utils.DetectOS()
 			if ext != "" {
-				// This is a file with an extension (like .deb, .rpm, .apk)
-
 				utils.Logger.Debugf("Operating System Family: %s", osExt)
 
 				if strings.Contains(assetName, osExt) {
@@ -429,7 +428,7 @@ func findDownloadAndVerifyAsset( //nolint:gocyclo,funlen
 							*mainAssetToDownload.Name, assetName)
 					}
 					mainAssetToDownload = asset
-					continue // Keep this as our preferred choice but continue scanning
+					continue // keep this as our preferred choice but continue scanning
 				}
 			}
 
@@ -437,12 +436,11 @@ func findDownloadAndVerifyAsset( //nolint:gocyclo,funlen
 			if mainAssetToDownload == nil {
 				mainAssetToDownload = asset
 			} else if !strings.Contains(*mainAssetToDownload.Name, osExt) {
-				// Our current selection doesn't match OS, but this one might be better
-				// (though it also doesn't match OS if we get here)
+				// it also doesn't match OS if we get here
 				utils.Logger.Warnf("Found multiple non-OS-matching assets. Using '%s', ignoring '%s'.",
 					*mainAssetToDownload.Name, assetName)
 			} else {
-				// We already have an OS-matching asset, ignore this one
+				// already have an OS-matching asset, ignore this one
 				utils.Logger.Warnf("Found multiple matching assets. Using '%s', ignoring '%s'.",
 					*mainAssetToDownload.Name, assetName)
 			}
@@ -475,9 +473,9 @@ func findDownloadAndVerifyAsset( //nolint:gocyclo,funlen
 		} else {
 			// No extension - extract binary name (first part before underscore)
 			// goreleaser creates an asset name like binary_version_operatingSystem_arch
-			// We want just the binary name
 			sbn := strings.Split(*mainAssetToDownload.Name, "_")
 			utils.Logger.Debugf("sbn: %s", sbn)
+			// We want just the binary name
 			finalMainAssetSaveName = sbn[0]
 			utils.Logger.Debugf("No extension found, using binary name: %s", finalMainAssetSaveName)
 		}
@@ -487,9 +485,9 @@ func findDownloadAndVerifyAsset( //nolint:gocyclo,funlen
 	switch {
 	case pathFlag != "" && pathFlag != ".": // User specified --path directory
 		targetMainAssetDir = filepath.Clean(pathFlag)
-	case pathFlag == ".": // User specified current directory
+	case pathFlag == ".": // current working directory
 		targetMainAssetDir = "."
-	default: // Default to XDG Bin Home
+	default:
 		targetMainAssetDir = xdg.BinHome
 	}
 
@@ -528,24 +526,20 @@ func findDownloadAndVerifyAsset( //nolint:gocyclo,funlen
 			targetMainAssetSavePath,
 		)
 	}
-
-	// Download Main Asset
+	// download main asset
 	downloadedMainAssetActualPath, err := downloadAndSaveAsset(
-		ctx, client, owner, repo, mainAssetToDownload, httpClient, targetMainAssetSavePath,
-	)
+		ctx, client, owner, repo, mainAssetToDownload, httpClient,
+		targetMainAssetSavePath)
 	if err != nil {
-		// downloadAndSaveAsset now includes targetMainAssetSavePath in its error reporting if relevant
 		return Asset{}, fmt.Errorf(
 			"failed to download main asset '%s': %w",
 			*mainAssetToDownload.Name,
 			err,
 		)
 	}
-	// downloadedMainAssetActualPath should be == targetMainAssetSavePath on success
-
-	// Download Checksum File and Verify (if found)
+	// download Checksum File and Verify (if found)
 	if checksumAssetToDownload != nil {
-		// Checksum file is always downloaded to the current directory with its original name
+		// checksum file is always downloaded to the current directory with its original name
 		targetChecksumAssetSavePath := filepath.Clean(filepath.Base(*checksumAssetToDownload.Name))
 		utils.Logger.Debugf(
 			"Checksum asset ('%s') will be saved as: %s",
@@ -580,8 +574,7 @@ func findDownloadAndVerifyAsset( //nolint:gocyclo,funlen
 			// and its original name for checksum lookup
 			verifyErr := verifyAssetChecksum(downloadedMainAssetActualPath, *mainAssetToDownload.Name, actualChecksumAssetPath, shaFlag)
 			if verifyErr != nil {
-				// Verification failed. verifyAssetChecksum handles cleanup of downloadedMainAssetActualPath.
-				return Asset{}, verifyErr // verifyErr already contains context
+				return Asset{}, verifyErr // Verification failed.
 			}
 			// Verification successful, checksum file (actualChecksumAssetPath) removed by verifyAssetChecksum.
 			_ = os.Remove(actualChecksumAssetPath)
@@ -619,9 +612,7 @@ func verifyAssetChecksum(
 		}
 	} else {
 		// Determine algorithm and get expected checksum via VerifyChecksum's parsing logic
-		// We call VerifyChecksum primarily to determine the algorithm and get the expected sum.
-		// The actual hashing and comparison will be done once outside this if/else.
-
+		// We call VerifyChecksum to determine the algorithm and get the expected sum.
 		// Temporarily, let's just determine the algorithm first
 		var determinedAlgoFromExtOrGeneric string
 		algoFromExt, found := utils.GetAlgorithmFromFilename(checksumAssetPath)
@@ -632,7 +623,6 @@ func verifyAssetChecksum(
 			determinedAlgoFromExtOrGeneric = utils.DefaultAlgorithmForGenericChecksums
 			utils.Logger.Debugf("Checksum file '%s' has no algorithm extension. Using default/hint: '%s'", checksumAssetPath, determinedAlgoFromExtOrGeneric)
 		}
-
 		// Ensure determined algo is supported
 		if _, err := utils.GetHasher(determinedAlgoFromExtOrGeneric); err != nil {
 			return fmt.Errorf("algorithm '%s' (derived or default) is not supported: %w", determinedAlgoFromExtOrGeneric, err)
