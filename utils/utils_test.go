@@ -479,3 +479,77 @@ func TestParseChecksumFile(t *testing.T) {
 		})
 	}
 }
+
+func TestParseBinaryName(t *testing.T) {
+	type args struct {
+		file string
+	}
+	tests := []struct {
+		name string
+		args args
+		want string
+	}{
+		{
+			name: "underscores only",
+			args: args{"binary_v0.0.1_windows-amd64"},
+			want: "binary",
+		},
+		{
+			name: "hyphens only",
+			args: args{"binary-v0.0.1-windows-amd64"},
+			want: "binary",
+		},
+		{
+			name: "underscores only",
+			args: args{"binary_0.0.1_windows-amd64"},
+			want: "binary",
+		},
+		{
+			name: "hyphens only",
+			args: args{"binary-0.0.1-windows-amd64"},
+			want: "binary",
+		},
+		{
+			name: "hyphenated binary with underscores",
+			args: args{"binary-foo_v0.0.1_windows_amd64"},
+			want: "binary-foo",
+		},
+		{
+			name: "hyphenated binary with hyphens",
+			args: args{"binary-foo-v0.0.1-windows-amd64"},
+			want: "binary-foo",
+		},
+		{
+			name: "hyphenated binary with hyphens no v",
+			args: args{"binary-foo-0.0.1-windows-amd64"},
+			want: "binary-foo",
+		},
+		{
+			name: "hyphenated binary with hyphens with v",
+			args: args{"binary-foo-v0.0.1-windows-amd64"},
+			want: "binary-foo",
+		},
+		{
+			name: "no OS or arch",
+			args: args{"binary"},
+			want: "binary",
+		},
+		{
+			name: "no version",
+			args: args{"binary_windows_amd64"},
+			want: "binary",
+		},
+		{
+			name: "no version with hyphens",
+			args: args{"binary-windows-amd64"},
+			want: "binary",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ParseBinaryName(tt.args.file); got != tt.want {
+				t.Errorf("ParseBinary() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

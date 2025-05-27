@@ -466,19 +466,9 @@ func findDownloadAndVerifyAsset( //nolint:gocyclo,funlen
 	if binNameFlag != "" { // User specified --binName
 		finalMainAssetSaveName = binNameFlag
 	} else {
-		if ext != "" {
-			// Has extension (like .deb, .rpm, .apk) - use full original name
-			finalMainAssetSaveName = *mainAssetToDownload.Name
-			utils.Logger.Debugf("Asset has extension '%s', using full name: %s", ext, finalMainAssetSaveName)
-		} else {
-			// No extension - extract binary name (first part before underscore)
-			// goreleaser creates an asset name like binary_version_operatingSystem_arch
-			sbn := strings.Split(*mainAssetToDownload.Name, "_")
-			utils.Logger.Debugf("sbn: %s", sbn)
-			// We want just the binary name
-			finalMainAssetSaveName = sbn[0]
-			utils.Logger.Debugf("No extension found, using binary name: %s", finalMainAssetSaveName)
-		}
+		// final main asset name (fman)
+		fman := utils.ParseBinaryName(*mainAssetToDownload.Name)
+		finalMainAssetSaveName = fman
 	}
 
 	var targetMainAssetDir string
