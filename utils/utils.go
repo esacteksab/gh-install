@@ -429,6 +429,24 @@ func ChmodFile(filePath string) {
 	}
 }
 
+func ParseBinaryName(assetName string) (binaryName string) {
+	regex := regexp.MustCompile(`[_-]v?\d+\.\d+\.\d+`)
+
+	match := regex.FindStringIndex(assetName)
+
+	if match == nil {
+		// If the version pattern is not found, try and parse based off simpler regex
+		regex := regexp.MustCompile("[-|_]")
+		result := regex.Split(assetName, -1)
+		return result[0]
+	}
+
+	// The binary name is the part of the string from the beginning up to the
+	// start of the matched delimiter pattern.
+	return assetName[0:match[0]]
+}
+
+// helper function for testing
 func resetOsArchRegexesForTesting() {
 	osArchRegexes = nil
 }
