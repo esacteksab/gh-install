@@ -123,6 +123,12 @@ install the appropriate binary. Includes checksum verification if available.`,
 			utils.Logger.Errorf("Failed to initialize GitHub client: %v", err)
 			return fmt.Errorf("failed to initialize GitHub client: %v", err)
 		}
+
+		// Right now all we do is check, but don't do any rate-limiting or
+		// retrying or backing off if the limit is met or exceeded.
+		// Probably want to do something about this, but low priority given the
+		// existing limit, there would be _a lot_ of calls (actions, workflows)
+		// to exceed those limits
 		ghclient.CheckRateLimit(ctx, client)
 
 		var assets []*github.ReleaseAsset
