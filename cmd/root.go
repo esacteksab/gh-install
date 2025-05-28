@@ -15,7 +15,7 @@ import (
 
 	"github.com/adrg/xdg"
 	"github.com/fatih/color"
-	"github.com/google/go-github/v71/github"
+	"github.com/google/go-github/v72/github"
 	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
 

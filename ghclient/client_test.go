@@ -5,13 +5,11 @@ package ghclient_test
 import (
 	"bytes"
 	"context"
-
-	// "io" // No longer strictly needed if not using a variable for os.Stderr
 	"os"
 	"testing"
 	"time"
 
-	"github.com/google/go-github/v71/github"
+	"github.com/google/go-github/v72/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/oauth2"
