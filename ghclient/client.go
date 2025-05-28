@@ -17,6 +17,11 @@ import (
 	"github.com/esacteksab/gh-install/utils"
 )
 
+const (
+	authLimit   = 5000
+	unAuthLimit = 60
+)
+
 // CachingTransport wraps an http.RoundTripper to potentially add custom logic,
 // such as logging or metrics, around the transport (including the cache layer).
 type CachingTransport struct {
@@ -111,26 +116,28 @@ func NewClient(ctx context.Context) (*github.Client, error) {
 //
 // - ctx: The context for the API call, allows for cancellation/timeouts.
 // - client: The initialized GitHub client for making API requests.
-func CheckRateLimit(ctx context.Context, client *github.Client) {
-	// Call the GitHub API to get the rate limits.
-	// GitHub provides separate rate limits for different API endpoints.
+//
+// Returns a string representing the state of authentication.
+func CheckRateLimit(ctx context.Context, client *github.Client) string {
 	limits, resp, err := client.RateLimit.Get(ctx)
 	if err != nil {
-		// Log a warning if retrieving rate limits fails.
 		utils.Logger.Debugf("Warning: Could not retrieve rate limits: %v", err)
-		// Even if the API call failed, the 'resp' might contain rate limit headers.
-		// Attempt to print rate limit info from the response headers as a fallback.
 		PrintRateLimit(resp)
-		return
+		return "unknown"
 	}
-	// If the call succeeded and limit data is available, print the core limit.
-	// The "core" limit applies to most GitHub API endpoints.
 	if limits != nil && limits.Core != nil {
 		printRate(limits.Core)
-	} else {
-		// Log a warning if the returned data structure doesn't contain expected rate limit info.
-		utils.Logger.Debug("Warning: Rate limit data not available in response.")
+		switch {
+		case limits.Core.Limit >= authLimit:
+			return "authenticated"
+		case limits.Core.Limit <= unAuthLimit:
+			return "unauthenticated"
+		default:
+			return "unknown"
+		}
 	}
+	utils.Logger.Debug("Warning: Rate limit data not available in response.")
+	return "unknown"
 }
 
 // PrintRateLimit logs rate limit information extracted directly from a GitHub API Response.
@@ -170,11 +177,9 @@ func printRate(rate *github.Rate) {
 	)
 
 	// Provide additional context based on the identified rate limit.
-	const authenticatedLimit = 5000 // Typical authenticated rate limit per hour.
-	const unauthenticatedLimit = 60 // Typical unauthenticated rate limit per hour.
-	if rate.Limit >= authenticatedLimit {
+	if rate.Limit >= authLimit {
 		utils.Logger.Debug("  Using authenticated rate limits.")
-	} else if rate.Limit <= unauthenticatedLimit {
+	} else if rate.Limit <= unAuthLimit {
 		utils.Logger.Debug("  Using unauthenticated rate limits.")
 	}
 }
