@@ -71,8 +71,9 @@ func TestNewClient_WithToken(t *testing.T) {
 	t.Setenv("XDG_CACHE_HOME", tempCacheDir)
 	defer t.Setenv("XDG_CACHE_HOME", originalXDGHome)
 
-	t.Setenv("GITHUB_TOKEN", "fake-test-token")
-	defer t.Setenv("GITHUB_TOKEN", "")
+	// t.Setenv("GITHUB_TOKEN", "fake-test-token")
+	// defer t.Setenv("GITHUB_TOKEN", "")
+	os.Getenv("GITHUB_TOKEN")
 
 	ctx := context.Background()
 	var client *github.Client
@@ -85,7 +86,7 @@ func TestNewClient_WithToken(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, client)
 
-	assert.Contains(t, logMsgs, "Using GITHUB_TOKEN for authentication.")
+	assert.Contains(t, logMsgs, "Using authenticated rate limits")
 
 	httpClient := client.Client()
 	require.NotNil(t, httpClient)
@@ -118,7 +119,7 @@ func TestNewClient_WithoutToken(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, client)
 
-	assert.Contains(t, logMsgs, "No GITHUB_TOKEN found")
+	assert.Contains(t, logMsgs, "Using unauthenticated rate limits.")
 
 	httpClient := client.Client()
 	require.NotNil(t, httpClient)

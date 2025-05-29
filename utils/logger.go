@@ -10,34 +10,6 @@ import (
 	"github.com/charmbracelet/log"
 )
 
-// The commented out code below was in the original file.
-// It's preserved here for reference but is not currently used.
-//
-// validFilenameChars = regexp.MustCompile(`^[a-zA-Z0-9_\-\.]+$`)
-//
-// const (
-// 	// Max filename length (common limit)
-// 	maxFilenameLength = 255
-// )
-//
-// doesExist checks if a file or directory exists at the specified path.
-//
-// This function uses os.Stat to determine if the path exists in the filesystem.
-//
-// Parameters:
-//
-//	path - The file system path to check for existence
-//
-// Returns:
-//
-//	bool - true if the path exists, false otherwise
-// func doesExist(path string) bool {
-// 	if _, err := os.Stat(path); os.IsNotExist(err) {
-// 		return false
-// 	}
-// 	return true
-// }
-
 // CreateLogger creates and configures the package-level Logger instance
 // based on the desired verbosity. This function can create a new logger
 // or reconfigure an existing one.

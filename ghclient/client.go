@@ -81,33 +81,25 @@ func NewClient(ctx context.Context) (*github.Client, error) {
 	// Initialize an HTTP transport that uses the disk cache.
 	cacheTransport := httpcache.NewTransport(cache)
 
-	// Check if a GitHub token was found.
 	if token != "" {
-		utils.Logger.Debug("🔧  Using GITHUB_TOKEN for authentication.")
-		// Create an OAuth2 token source with the provided token.
 		ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
-		// Create an OAuth2 transport that wraps the cache transport and adds the token to requests.
-		// This allows authenticated requests to be cached.
 		authTransport := &oauth2.Transport{
-			Base:   cacheTransport,                   // The transport to wrap (our cache transport).
-			Source: oauth2.ReuseTokenSource(nil, ts), // Source for the token, reusing it.
+			Base:   cacheTransport,
+			Source: oauth2.ReuseTokenSource(nil, ts),
 		}
-		// Wrap the authenticated transport with our custom CachingTransport.
-		// This allows us to add custom logic around HTTP requests if needed.
 		cachingTransport := &CachingTransport{Transport: authTransport}
-		// Create the final HTTP client using the wrapped authenticated transport.
 		httpClient = &http.Client{Transport: cachingTransport}
 	} else {
-		utils.Logger.Debug("⚠️  No GITHUB_TOKEN found, using unauthenticated requests (lower rate limit).")
-		// If no token is found, use the cache transport directly wrapped in our custom transport.
-		// Unauthenticated requests have much lower rate limits (60/hour vs 5000/hour).
 		debugTransport := &CachingTransport{Transport: cacheTransport}
-		// Create the final HTTP client using the wrapped cache transport.
 		httpClient = &http.Client{Transport: debugTransport}
 	}
 
-	// Create and return the GitHub client using the configured HTTP client.
 	client := github.NewClient(httpClient)
+
+	// After client creation, check and log the actual rate limit/auth status:
+	limitType := CheckRateLimit(ctx, client)
+	utils.LogRateLimitStatus(limitType)
+
 	return client, nil
 }
 

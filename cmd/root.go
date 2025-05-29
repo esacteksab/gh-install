@@ -130,16 +130,7 @@ install the appropriate binary. Includes checksum verification if available.`,
 		// existing limit, there would be _a lot_ of calls (actions, workflows)
 		// to exceed those limits
 		limitType := ghclient.CheckRateLimit(ctx, client)
-		switch limitType {
-		case "authenticated":
-			utils.Logger.Debug("🔧  Authenticated GitHub API access in effect.")
-		case "unauthenticated":
-			utils.Logger.Debug(
-				"⚠️  Unauthenticated GitHub API access in effect (lower rate limit).",
-			)
-		default:
-			utils.Logger.Debug("ℹ️  Could not determine GitHub API authentication status.")
-		}
+		utils.LogRateLimitStatus(limitType)
 
 		var assets []*github.ReleaseAsset
 		var releaseTag string

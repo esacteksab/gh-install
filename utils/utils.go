@@ -446,6 +446,19 @@ func ParseBinaryName(assetName string) (binaryName string) {
 	return assetName[0:match[0]]
 }
 
+func LogRateLimitStatus(limitType string) {
+	switch limitType {
+	case "authenticated":
+		Logger.Debug("🔧  Authenticated GitHub API access in effect.")
+	case "unauthenticated":
+		Logger.Debug(
+			"⚠️  Unauthenticated GitHub API access in effect (lower rate limit).",
+		)
+	default:
+		Logger.Debug("ℹ️  Could not determine GitHub API authentication status.")
+	}
+}
+
 // helper function for testing
 func resetOsArchRegexesForTesting() {
 	osArchRegexes = nil
