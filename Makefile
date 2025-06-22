@@ -66,4 +66,5 @@ tidy:
 .PHONY: update
 update:
 	go get -u ./...
+	go get -u -modfile=go.tool.mod tool
 	go mod tidy
