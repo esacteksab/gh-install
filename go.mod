@@ -9,7 +9,7 @@ require (
 	github.com/google/go-github/v71 v71.0.1-0.20250418200928-5b75aa86dba5
 	github.com/knadh/koanf/parsers/toml/v2 v2.2.0
 	github.com/knadh/koanf/providers/file v1.2.0
-	github.com/knadh/koanf/v2 v2.2.2
+	github.com/knadh/koanf/v2 v2.3.0
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/oauth2 v0.31.0
 )
