@@ -1,6 +1,6 @@
 module github.com/esacteksab/gh-install
 
-go 1.25.3
+go 1.25.5
 
 require (
 	github.com/charmbracelet/lipgloss v1.1.0
