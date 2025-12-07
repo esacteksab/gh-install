@@ -1,4 +1,5 @@
 golang 1.25.5
 nodejs 22.21.1
 python 3.12.12
-pnpm   10.20.0
+pnpm   10.24.0
+uv     0.9.16
