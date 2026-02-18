@@ -47,9 +47,9 @@ func ParseArgs(argString string) (ParsedArgs, error) {
 	var owner, repo, version string
 
 	// Check if the argument contains a version (separated by '@')
-	atIndex := strings.Index(argString, "@")
+	found := strings.Contains(argString, "@")
 
-	if atIndex != -1 { // Contains "@"
+	if found { // Contains "@"
 		// Split into owner/repo part and version part
 		parts := strings.Split(argString, "@")
 
