@@ -225,6 +225,22 @@ func TestMatchFile(t *testing.T) {
 			args: args{"BINARY_0.0.1_LINUX-i386"},
 			want: false,
 		},
+		{
+			name: "Linux-64bit (trivy style)",
+			args: args{"trivy_0.64.1_Linux-64bit.tar.gz"},
+			want: true,
+		},
+		{
+			name: "Linux-64bit deb (trivy style)",
+			args: args{"trivy_0.64.1_Linux-64bit.deb"},
+			want: true,
+		},
+		{
+			name: "Linux-ARM64 (trivy style)",
+			// This test assumes the test runs on a linux/amd64 system (not arm64)
+			args: args{"trivy_0.64.1_Linux-ARM64.tar.gz"},
+			want: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

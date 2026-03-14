@@ -4,6 +4,7 @@ package utils
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -309,9 +310,7 @@ func TestVerifyChecksum(t *testing.T) {
 
 		savedAlgorithmExts := algorithmExts
 		tempModifiedExts := make(map[string]bool)
-		for k, v := range savedAlgorithmExts {
-			tempModifiedExts[k] = v
-		}
+		maps.Copy(tempModifiedExts, savedAlgorithmExts)
 		tempModifiedExts[".unsupported"] = true
 		algorithmExts = tempModifiedExts
 		defer func() { algorithmExts = savedAlgorithmExts }()

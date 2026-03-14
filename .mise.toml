@@ -1,12 +1,16 @@
 [env]
 
-  [env._]
+[env._]
 
-    [env._.python]
+[env._.python]
 
-      [env._.python.venv]
-        create = true
-        path   = ".venv"
+[env._.python.venv]
+create = true
+path   = ".venv"
 
 [tools]
-pnpm = "latest"
+go     = "1.25.8"
+node   = "22.22.1"
+pnpm   = "10.32.0"
+python = "3.12.12"
+uv     = "0.10.10"

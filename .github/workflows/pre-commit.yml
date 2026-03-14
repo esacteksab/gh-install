@@ -4,9 +4,6 @@ on:
   pull_request:
     branches:
       - "main"
-  push:
-    branches:
-      - "*"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref_name }}
@@ -20,4 +17,4 @@ permissions:
 
 jobs:
   precommit-reusable:
-    uses: esacteksab/.github/.github/workflows/pre-commit.yml@a6d41b15fc96a28fe28b001938f6486aeb0f55d0 #0.9.1
+    uses: esacteksab/.github/.github/workflows/pre-commit.yml@0e95d2f770d796e451c0f507168f4befd405b46a  # v0.80.3
