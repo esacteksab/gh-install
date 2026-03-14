@@ -120,8 +120,18 @@ func GetOSArch() {
 	osName := runtime.GOOS
 	arch := runtime.GOARCH
 
-	// Escape special regex characters in OS name to avoid regex pattern issues
-	quotedOS := regexp.QuoteMeta(osName)
+	// Build OS patterns - OS name and common alternatives used in release asset naming
+	var osPatterns []string
+	osPatterns = append(osPatterns, regexp.QuoteMeta(osName))
+
+	// Add common alternative OS names that are used in releases
+	switch osName {
+	case "darwin":
+		osPatterns = append(
+			osPatterns,
+			regexp.QuoteMeta("macos"),
+		) // Common alternative for darwin (e.g., trivy uses macOS-64bit)
+	}
 
 	// Create architecture mappings for common variants
 	var archPatterns []string
@@ -134,8 +144,16 @@ func GetOSArch() {
 	switch arch {
 	case "amd64":
 		archPatterns = append(archPatterns, "x86_64") // Common alternative for amd64
+		archPatterns = append(
+			archPatterns,
+			"64bit",
+		) // Used by some projects (e.g., trivy uses Linux-64bit)
 	case "386":
 		archPatterns = append(archPatterns, "i386") // Common alternative for 386
+		archPatterns = append(
+			archPatterns,
+			"32bit",
+		) // Used by some projects (e.g., trivy uses Linux-32bit)
 	case "arm64":
 		archPatterns = append(archPatterns, "aarch64") // Common alternative for arm64
 	}
@@ -143,27 +161,29 @@ func GetOSArch() {
 	// Create all combinations of OS and architecture patterns
 	// This handles different formats that projects may use for naming assets
 	var patterns []string
-	for _, archPattern := range archPatterns {
-		// Separators: -, _, / or just contains both words anywhere
-		// These cover formats like: linux-amd64, linux_amd64, linux/amd64
-		patterns = append(
-			patterns,
-			fmt.Sprintf("(?i).*%s[-_/]%s.*", quotedOS, archPattern),
-		) // os<sep>arch
-		patterns = append(
-			patterns,
-			fmt.Sprintf("(?i).*%s[-_/]%s.*", archPattern, quotedOS),
-		) // arch<sep>os
-		patterns = append(
-			patterns,
-			fmt.Sprintf(
-				"(?i)(.*%s.*%s.*|.*%s.*%s.*)",
-				quotedOS,
-				archPattern,
-				archPattern,
-				quotedOS,
-			),
-		) // Contains both, any order
+	for _, osPattern := range osPatterns {
+		for _, archPattern := range archPatterns {
+			// Separators: -, _, / or just contains both words anywhere
+			// These cover formats like: linux-amd64, linux_amd64, linux/amd64
+			patterns = append(
+				patterns,
+				fmt.Sprintf("(?i).*%s[-_/]%s.*", osPattern, archPattern),
+			) // os<sep>arch
+			patterns = append(
+				patterns,
+				fmt.Sprintf("(?i).*%s[-_/]%s.*", archPattern, osPattern),
+			) // arch<sep>os
+			patterns = append(
+				patterns,
+				fmt.Sprintf(
+					"(?i)(.*%s.*%s.*|.*%s.*%s.*)",
+					osPattern,
+					archPattern,
+					archPattern,
+					osPattern,
+				),
+			) // Contains both, any order
+		}
 	}
 
 	// Pre-compile all the patterns for better performance
