@@ -127,7 +127,10 @@ func GetOSArch() {
 	// Add common alternative OS names that are used in releases
 	switch osName {
 	case "darwin":
-		osPatterns = append(osPatterns, regexp.QuoteMeta("macos")) // Common alternative for darwin (e.g., trivy uses macOS-64bit)
+		osPatterns = append(
+			osPatterns,
+			regexp.QuoteMeta("macos"),
+		) // Common alternative for darwin (e.g., trivy uses macOS-64bit)
 	}
 
 	// Create architecture mappings for common variants
@@ -141,10 +144,16 @@ func GetOSArch() {
 	switch arch {
 	case "amd64":
 		archPatterns = append(archPatterns, "x86_64") // Common alternative for amd64
-		archPatterns = append(archPatterns, "64bit")  // Used by some projects (e.g., trivy uses Linux-64bit)
+		archPatterns = append(
+			archPatterns,
+			"64bit",
+		) // Used by some projects (e.g., trivy uses Linux-64bit)
 	case "386":
-		archPatterns = append(archPatterns, "i386")  // Common alternative for 386
-		archPatterns = append(archPatterns, "32bit") // Used by some projects (e.g., trivy uses Linux-32bit)
+		archPatterns = append(archPatterns, "i386") // Common alternative for 386
+		archPatterns = append(
+			archPatterns,
+			"32bit",
+		) // Used by some projects (e.g., trivy uses Linux-32bit)
 	case "arm64":
 		archPatterns = append(archPatterns, "aarch64") // Common alternative for arm64
 	}
