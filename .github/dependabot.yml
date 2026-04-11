@@ -74,6 +74,9 @@ updates:
       day: "friday"
       time: "19:00"
       timezone: "America/Chicago"
+    ignore:
+      - dependency-name: "esacteksab/go"
+        update-types: ["version-update:semver-minor"]
     labels:
       - "dependencies"
       - "dev"
