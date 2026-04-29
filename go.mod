@@ -5,7 +5,7 @@ go 1.25.9
 require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/charmbracelet/log v1.0.0
-	github.com/esacteksab/httpcache v0.3.0
+	github.com/esacteksab/httpcache v0.4.0
 	github.com/knadh/koanf/parsers/toml/v2 v2.2.0
 	github.com/knadh/koanf/providers/file v1.2.1
 	github.com/knadh/koanf/v2 v2.3.4
