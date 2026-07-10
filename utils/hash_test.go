@@ -160,7 +160,8 @@ func TestVerifyChecksum(t *testing.T) {
 		) // This is the checksumFilePath
 		genericChecksumFileContent := fmt.Sprintf(
 			"%s  %s\n# Some other file\n%s  some_other_file.zip",
-			expectedSha256, baseAssetPath, "fakechecksumforsomeotherfile")
+			expectedSha256, baseAssetPath, "fakechecksumforsomeotherfile",
+		)
 		err := os.WriteFile(checksumFilePath, []byte(genericChecksumFileContent), 0o644)
 		if err != nil {
 			t.Fatalf("Failed to write generic checksum file: %v", err)
