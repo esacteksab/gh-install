@@ -73,14 +73,16 @@ func init() {
 		"binName",
 		"b",
 		"",
-		"name to save binary as")
+		"name to save binary as",
+	)
 	rootCmd.PersistentFlags().
 		StringVarP(
 			&shaFlag,
 			"sha",
 			"s",
 			"",
-			usageMessage)
+			usageMessage,
+		)
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
