@@ -3,7 +3,7 @@ version: "2"
 run:
   timeout: 5m
   tests: true
-  go: "1.25.12"
+  go: "1.26.6"
 linters:
   enable:
     - dupl
@@ -56,7 +56,7 @@ formatters:
     goimports:
       local-prefixes: [github.com/esacteksab/gh-install]
     golines:
-      max-len: 100
+      max-len: 160
       tab-len: 4
       shorten-comments: false
       reformat-tags: true
