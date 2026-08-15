@@ -81,13 +81,13 @@ func GetHasher(algorithm string) (hash.Hash, error) { //nolint:gocyclo
 	case "sha512":
 		h = sha512.New()
 	case "sha3-224":
-		h = sha3.New224()
+		h = sha3.New224() //nolint:govet
 	case "sha3-384":
-		h = sha3.New384()
+		h = sha3.New384() //nolint:govet
 	case "sha3-256":
-		h = sha3.New256()
+		h = sha3.New256() //nolint:govet
 	case "sha3-512":
-		h = sha3.New512()
+		h = sha3.New512() //nolint:govet
 	default:
 		return nil, fmt.Errorf("invalid or unsupported hash algorithm: %s", algorithm)
 	}
