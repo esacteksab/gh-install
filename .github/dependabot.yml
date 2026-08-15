@@ -81,3 +81,20 @@ updates:
       - "dependencies"
       - "dev"
       - "docker"
+
+  - package-ecosystem: "pre-commit"
+    directory: "/"
+    groups:
+      pre-commit-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+    schedule:
+      interval: "weekly"
+      day: "friday"
+      time: "19:00"
+      timezone: "America/Chicago"
+    labels:
+      - "dependencies"
+      - "dev"
+      - "pre-commit"
