@@ -5,4 +5,4 @@
     Hashi = "Hashi"
 
 [files]
-  extend-exclude = [".goreleaser.yaml"]
+  extend-exclude = [".goreleaser.yaml", "scripts/update-go-version.sh"]
